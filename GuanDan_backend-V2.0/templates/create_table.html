@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>展示得分</title>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">首页</a>
+        <a href="{{ url_for('create_table') }}">展示队伍得分</a>
+        <a href="{{ url_for('generate_matches') }}">生成对战列表</a>
+        <a href="{{ url_for('modify_select_table') }}">后台修改比分</a>
+        <a href="{{ url_for('select_table') }}">用户查询桌号</a>
+    </nav>
+
+    <!-- 处理Flash信息 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div id="flash-messages" style="display: none;">
+        {% for category, message in messages %}
+            <span class="flash-message" data-category="{{ category }}">{{ message }}</span>
+        {% endfor %}
+        </div>
+        <script>
+        document.querySelectorAll(".flash-message").forEach(function(msgSpan) {
+            alert(msgSpan.innerText);
+        });
+        </script>
+    {% endif %}
+    {% endwith %}
+
+    <h1>队伍得分表</h1>
+
+    <!-- 显示当前轮次 -->
+    <p>当前轮次：{{ current_turn }}</p>
+
+    <!-- 表单输入 TURN 值 -->
+    <form method="post" action="{{ url_for('set_turn') }}" onsubmit="return confirmTurnChange();">
+        <label for="turn">修改轮次 (TURN):</label>
+        <input type="text" name="turn" id="turn" required>
+        <button type="submit">提交</button>
+    </form>
+
+    <br>
+
+    <!-- 表单启动倒计时 -->
+    <form method="post" action="{{ url_for('start_timer') }}" style="display: inline-block; margin-right: 10px;">
+        <button type="submit" style="padding: 10px 20px; font-size: 16px;">开启每轮倒计时</button>
+    </form>
+
+    <!-- 表单暂停倒计时 -->
+    <form method="post" action="{{ url_for('stop_timer') }}" style="display: inline-block;">
+        <button type="submit" style="padding: 10px 20px; font-size: 16px;">暂停每轮倒计时</button>
+    </form>
+
+    <br>
+
+    <script>
+        function confirmTurnChange() {
+            const newTurn = document.getElementById('turn').value;
+            return confirm("确定将 TURN 修改为 " + newTurn + " 吗？");
+        }
+    </script>
+
+    <table border="1">
+        <thead>
+            <tr>
+                <th>序号</th>
+                <th>队伍ID</th>
+                <th>队伍办公室</th>
+                <th>队伍名称</th>
+                <th>队伍人员</th>
+                <th>大分</th>
+                <th>小分</th>
+                <th>轮次</th>
+                <th>轮次对应桌号</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in mini_team_info %}
+            <tr>
+                <td>{{ row[0] }}</td>
+                <td>{{ row[1] }}</td>
+                <td>{{ row[2] }}</td>
+                <td>{{ row[3] }}</td>
+                <td>{{ row[4] }}</td>
+                <td>{{ row[5] }}</td>
+                <td>{{ row[6] }}</td>
+                <td>{{ row[7] }}</td>
+                <td>{{ row[8] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

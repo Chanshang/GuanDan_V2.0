@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>对战表</title>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">首页</a>
+        <a href="{{ url_for('create_table') }}">展示队伍得分</a>
+        <a href="{{ url_for('generate_matches') }}">生成对战列表</a>
+        <a href="{{ url_for('modify_select_table') }}">后台修改比分</a>
+        <a href="{{ url_for('select_table') }}">用户查询桌号</a>
+    </nav>
+
+    <h1>当前对战信息</h1>
+    <table border="1">
+        <tr>
+            <th>桌号</th><th>对手1</th><th>队员1</th><th>对手2</th><th>队员2</th><th>轮次</th><th>等级1</th><th>等级2</th>
+        </tr>
+        {% for fight in fights %}
+        <tr>
+            {% for cell in fight %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+
+    <form action="{{ url_for('generate_matches') }}" method="POST" onsubmit="return confirmReshuffle()">
+        <button type="submit">随机分配</button>
+    </form>
+
+    <script>
+        function confirmReshuffle() {
+            const result = confirm("是否重新分配？");
+            if (result) {
+                // 选择了“是”
+                return true; // 表单继续提交
+            } else {
+                // 选择了“否”
+                return false; // 阻止表单提交
+            }
+        }
+    </script>
+
+</body>
+</html>

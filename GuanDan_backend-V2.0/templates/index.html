@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>上传名单数据</title>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">首页</a>
+        <a href="{{ url_for('create_table') }}">展示队伍得分</a>
+        <a href="{{ url_for('generate_matches') }}">生成对战列表</a>
+        <a href="{{ url_for('modify_select_table') }}">后台修改比分</a>
+        <a href="{{ url_for('select_table') }}">用户查询桌号</a>
+    </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div id="flash-messages" style="display: none;">
+        {% for category, message in messages %}
+            <span class="flash-message" data-category="{{ category }}">{{ message }}</span>
+        {% endfor %}
+        </div>
+        <script>
+        document.querySelectorAll(".flash-message").forEach(function(msgSpan) {
+            alert(msgSpan.innerText);
+        });
+        </script>
+    {% endif %}
+    {% endwith %}
+
+    <h1>上传名单数据</h1>
+    <form action="/" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <button type="submit">上传并导入</button>
+    </form>
+
+    <br>
+
+    <form action="{{ url_for('clear_tables') }}" method="POST" onsubmit="return confirm('确认要清空所有表格吗？');">
+        <button type="submit" class="btn btn-danger">清空所有表格</button>
+    </form>
+
+    <br>
+
+    <h2>总表数据</h2>
+    <table border="1">
+        <tr>
+            <th>序号</th><th>办公室</th><th>队长</th><th>队名1</th><th>队员1</th>
+            <th>队名2</th><th>队员2</th><th>队名3</th><th>队员3</th>
+            <th>队名4</th><th>队员4</th><th>替补队员</th>
+        </tr>
+        {% for row in rows %}
+        <tr>
+            {% for cell in row %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+
+    </table>
+
+    <br>
+
+        <thead>
+          <tr>
+            <th></th>
+            <!-- 其他表头元素 -->
+          </tr>
+        </thead>
+</body>
+</html>

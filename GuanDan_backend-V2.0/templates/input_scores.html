@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>更新比分</title>
+</head>
+<body>
+    <nav>
+        <!-- <a href="{{ url_for('index') }}">首页</a>
+        <a href="{{ url_for('create_table') }}">展示队伍得分</a>
+        <a href="{{ url_for('generate_matches') }}">生成对战列表</a>
+        <a href="{{ url_for('select_table') }}">查询桌号</a> -->
+    </nav>
+
+    <!-- 弹窗显示 flash 消息 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div id="flash-messages" style="display: none;">
+        {% for category, message in messages %}
+            <span class="flash-message" data-category="{{ category }}">{{ message }}</span>
+        {% endfor %}
+        </div>
+        <script>
+        document.querySelectorAll(".flash-message").forEach(function(msgSpan) {
+            alert(msgSpan.innerText);
+        });
+        </script>
+    {% endif %}
+    {% endwith %}
+
+    <script>
+      function validateForm() {
+          // 获取所有名为 "winner" 的单选按钮
+          var radios = document.getElementsByName("winner");
+          // 检查是否有单选按钮被选中
+          var selected = Array.from(radios).some(radio => radio.checked);
+          if (!selected) {
+              // 如果没有单选按钮被选中，显示警告并阻止表单提交
+              alert("请选择最后一轮的赢家");
+              return false;
+          }
+          // 如果有单选按钮被选中，允许表单提交
+          return true;
+      }
+  </script>
+
+    <h1>更新第 {{ turn_num }} 轮，桌号 {{ table_num }} 的比分</h1>
+
+    <!-- 队伍1的信息 -->
+    <p>队伍1：{{ team1_name }}&nbsp;&nbsp;&nbsp;&nbsp;队员：{{ team1_members }}&nbsp;&nbsp;&nbsp;&nbsp;</p>
+
+    <!-- 队伍2的信息 -->
+    <p>队伍2：{{ team2_name }}&nbsp;&nbsp;&nbsp;&nbsp;队员：{{ team2_members }}&nbsp;&nbsp;&nbsp;&nbsp;</p>
+
+    <!-- 比赛结果输入表单 -->
+    <form action="{{ url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=modify_type) }}" method="POST" onsubmit="return confirmReshuffle()">
+        <label for="score_x">{{ team1_name }} 最终等级：</label>
+        <input type="text" id="score_x" name="score_x" required><br><br>
+
+        <label for="score_y">{{ team2_name }} 最终等级：</label>
+        <input type="text" id="score_y" name="score_y" required><br><br>
+        
+        <label for="select_win">此轮最后一次对战的赢家是：</label>
+        <div style="display: flex; align-items: center;">
+            <input type="radio" id="team1" name="winner" value="{{team1_name}}">
+            <label for="team1" style="margin-left: 10px;">{{team1_name}}</label>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <input type="radio" id="team2" name="winner" value="{{team2_name}}">
+            <label for="team2" style="margin-left: 10px;">{{team2_name}}</label>
+        </div>
+
+        <br>
+
+        <button type="submit">确认更新</button>
+    </form>
+
+    <p><b>填写说明：</b></p>
+    <p><b>此程序只需要玩家填写，某轮掼蛋对战后，双方升到的等级</b></p>
+    <p><b>请填写等级对应的数字 (填写范围是2~17)</b></p>
+    <p><b>(等级对应: 2~10 数字牌本身就是等级, 之后 j=11, q=12, k=13, A=14)</b></p>
+    <br>
+
+    <p><b>等级小于A：A 必须打，不得直接升级过 A（如等级为K时，胜利后升3级仍应该处于A）</b></p>
+    <p><b>等级等于A：必须一人是上游、另一人不是下游才能算过A取胜, 否则需再继续打“A”，连续3次没打过，退回打2；</b></p>
+    <p><b>双方每轮共用时 60 分钟，如一方过Ａ则提前结束（过Ａ要求如上），否则比赛时间到时比赛结束，以级数高者为本局胜方，如为平级则最后一局胜出者为胜方。</b></p>
+
+<!-- 
+    <p><b>特殊情况举例：</b></p>
+    <p><b>在一轮中（60分钟）会有多次对战，每次对战有一方升级</b></p>
+    <p><b>(等级等于 14 的例子： 当前等级为 q(12), 对战获胜得 2 分, 12+2=14, 等级未大于A(14), 无需填写，继续游戏)</b></p>
+    <p><b>(最终等级大于 14 的例子1： 当前等级为 q(12), 对战获胜得 3 分, 12+3=15, 大于A(14)结束游戏，填写15)</b></p>
+    <p><b>(最终等级大于 14 的例子2： 当前等级为 A(14), 对战获胜得 3 分, 14+3=17, 大于A(14)结束游戏，填写17)</b></p>
+    <p><b>(若此轮时间结束时，双方等级都不大于 A(14), 则填入双方所在的数字等级即可)</b></p> -->
+
+    <script>
+        function confirmReshuffle() {
+
+            // 获取所有名为 "winner" 的单选按钮
+            var radios = document.getElementsByName("winner");
+            // 检查是否有单选按钮被选中
+            var selected = Array.from(radios).some(radio => radio.checked);
+            if (!selected) {
+                // 如果没有单选按钮被选中，显示警告并阻止表单提交
+                alert("请选择最后一轮的赢家");
+                return false;
+            }
+
+            // 获取输入框的值
+            var score_x = document.getElementById("score_x").value;
+            var score_y = document.getElementById("score_y").value;
+            // 检查输入框是否为空
+            if (score_x === "" || score_y === "") {
+                // 如果输入框为空，显示警告并阻止表单提交
+                alert("请填写所有必填项");
+                return false;
+            }
+
+            // 如果有单选按钮被选中，并且输入框不为空，允许表单提交
+            return true;
+        }
+    </script>
+
+</body>
+</html>

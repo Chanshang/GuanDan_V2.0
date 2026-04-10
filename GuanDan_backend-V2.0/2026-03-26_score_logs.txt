@@ -1,0 +1,40 @@
+Time: 2026-03-26 20:15:18
+Turn: 1
+Table: 3
+Team 1: 611-B
+Members 1: 李梦柯-顾峥
+Team 1 Score: 23
+Team 2: 812-A
+Members 2: 魏军-张镇耀
+Team 2 Score: 5
+----------------------------------------
+Time: 2026-03-26 20:16:44
+Turn: 1
+Table: 2
+Team 1: 702-D
+Members 1: 唐铭锋-余星耀
+Team 1 Score: 5
+Team 2: 802-C
+Members 2: 樊婷-伍亚洲
+Team 2 Score: 2
+----------------------------------------
+Time: 2026-03-26 20:17:04
+Turn: 1
+Table: 3
+Team 1: 611-B
+Members 1: 李梦柯-顾峥
+Team 1 Score: 22
+Team 2: 812-A
+Members 2: 魏军-张镇耀
+Team 2 Score: 13
+----------------------------------------
+Time: 2026-03-26 20:17:19
+Turn: 1
+Table: 3
+Team 1: 611-B
+Members 1: 李梦柯-顾峥
+Team 1 Score: 32
+Team 2: 812-A
+Members 2: 魏军-张镇耀
+Team 2 Score: 2
+----------------------------------------

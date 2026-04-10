@@ -1,0 +1,30 @@
+Time: 2026-03-27 16:38:12
+Turn: 1
+Table: 4
+Team 1: 611-A
+Members 1: 龚云飞-何元锋
+Team 1 Score: 23
+Team 2: 810-A
+Members 2: 谢科-周漾
+Team 2 Score: 3
+----------------------------------------
+Time: 2026-03-27 16:40:24
+Turn: 1
+Table: 8
+Team 1: 709-D
+Members 1: 石光远-贺家豪
+Team 1 Score: 3
+Team 2: 808-A
+Members 2: 杨泓亮-简俊桃
+Team 2 Score: 23
+----------------------------------------
+Time: 2026-03-27 16:40:37
+Turn: 1
+Table: 5
+Team 1: 706-C
+Members 1: 赵江鹏-钟裕祥
+Team 1 Score: 23
+Team 2: 711-A
+Members 2: 文思-黄世鹏
+Team 2 Score: 2
+----------------------------------------
