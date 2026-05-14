@@ -215,6 +215,12 @@
 
 ## 测试与验证
 
+后端运行环境：
+
+- Conda 环境名：`flask_app_env`
+- Conda 环境路径：`C:\Users\Administrator\miniconda3\envs\flask_app_env`
+- 该环境已经配置完毕，后续后端运行和测试应优先使用该环境，避免误报缺少依赖。
+
 后端测试：
 
 - 为比分解析和比分提交 helper 增加测试；涉及数据库的部分尽量 mock。
@@ -230,6 +236,7 @@
 
 ```powershell
 cd GuanDan_backend-V2.0
+conda activate flask_app_env
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
