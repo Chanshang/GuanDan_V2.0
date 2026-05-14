@@ -31,6 +31,8 @@ from services.stats_service import (
     check_match_exists,
 )
 from api.frontend_api import frontend_api_bp
+from api.admin_api import admin_api_bp
+from api.score_api import score_api_bp
 from api.dashboard_cache import (
     is_valid_turn,
     get_turn,
@@ -51,11 +53,15 @@ CORS(app, supports_credentials=True)  # 全局允许跨域请求
 
 app.secret_key = 'your_secret_key'
 app.register_blueprint(frontend_api_bp)
+app.register_blueprint(admin_api_bp)
+app.register_blueprint(score_api_bp)
 
 get_db_connection = Config().get_db_connection
 
 MAX_TABLE_NUMBER = 22
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
+app.config["GUANDAN_GET_DB_CONNECTION"] = get_db_connection
+app.config["GUANDAN_UPLOAD_DIR"] = UPLOAD_DIR
 
 
 # 对阵信息缓存（用于录分页面）
@@ -98,6 +104,10 @@ def load_fight_info(turn_num):
     _fight_cache[turn_num] = (rows, time() + CACHE_TTL)
     write_fight_info_to_redis(turn_num, rows, ttl_seconds=REDIS_FIGHT_CACHE_TTL)
     return rows
+
+
+app.config["GUANDAN_CLEAR_FIGHT_CACHE"] = clear_fight_cache
+app.config["GUANDAN_LOAD_FIGHT_INFO"] = load_fight_info
 
 ################################################################
 # 下面是后台功能接口
