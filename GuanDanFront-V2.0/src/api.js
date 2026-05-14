@@ -1,7 +1,7 @@
 ﻿const BASE_URL = import.meta.env.VITE_BASE_API;
 const PORT = import.meta.env.VITE_BASE_PORT;
 
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const res = await fetch(`${BASE_URL}:${PORT}${path}`, options);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status} - ${res.statusText}`);
