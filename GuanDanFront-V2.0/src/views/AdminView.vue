@@ -155,6 +155,51 @@ const matchTeamTwo = (match) => fieldValue(
   [3],
 )
 
+const matchTeamOneBigScore = (match) => fieldValue(
+  match,
+  ['team1_big_score', 'team_1_big_score', 'team_a_big_score', 'big_score_1'],
+  '-',
+  [8],
+)
+
+const matchTeamOneSmallScore = (match) => fieldValue(
+  match,
+  ['team1_small_score', 'team_1_small_score', 'team_a_small_score', 'small_score_1'],
+  '-',
+  [9],
+)
+
+const matchTeamTwoBigScore = (match) => fieldValue(
+  match,
+  ['team2_big_score', 'team_2_big_score', 'team_b_big_score', 'big_score_2'],
+  '-',
+  [10],
+)
+
+const matchTeamTwoSmallScore = (match) => fieldValue(
+  match,
+  ['team2_small_score', 'team_2_small_score', 'team_b_small_score', 'small_score_2'],
+  '-',
+  [11],
+)
+
+const formatMatchScore = (bigScore, smallScore) => {
+  if (bigScore === '-' && smallScore === '-') {
+    return '-'
+  }
+  return `${displayCell(bigScore)} / ${displayCell(smallScore)}`
+}
+
+const matchTeamOneScore = (match) => formatMatchScore(
+  matchTeamOneBigScore(match),
+  matchTeamOneSmallScore(match),
+)
+
+const matchTeamTwoScore = (match) => formatMatchScore(
+  matchTeamTwoBigScore(match),
+  matchTeamTwoSmallScore(match),
+)
+
 const loadOverview = async () => {
   loadingOverview.value = true
   error.value = ''
@@ -403,7 +448,7 @@ onMounted(refreshAll)
         </div>
         <p v-if="loadingOverview" class="empty-text">正在加载队伍...</p>
         <p v-else-if="!teams.length" class="empty-text">暂无队伍数据</p>
-        <div v-else class="table-wrap">
+        <div v-else class="table-wrap list-table-wrap">
           <table>
             <thead>
               <tr v-if="hasArrayTeamRows">
@@ -442,14 +487,16 @@ onMounted(refreshAll)
         </div>
         <p v-if="loadingMatches" class="empty-text">正在加载对阵...</p>
         <p v-else-if="!matches.length" class="empty-text">暂无对阵数据</p>
-        <div v-else class="table-wrap">
+        <div v-else class="table-wrap list-table-wrap">
           <table>
             <thead>
               <tr>
                 <th>轮次</th>
                 <th>桌号</th>
                 <th>甲方队伍</th>
+                <th>甲方得分</th>
                 <th>乙方队伍</th>
+                <th>乙方得分</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -461,7 +508,9 @@ onMounted(refreshAll)
                 <td>{{ formatTurn(matchTurn(match)) }}</td>
                 <td>{{ matchTable(match) }}</td>
                 <td>{{ matchTeamOne(match) }}</td>
+                <td>{{ matchTeamOneScore(match) }}</td>
                 <td>{{ matchTeamTwo(match) }}</td>
+                <td>{{ matchTeamTwoScore(match) }}</td>
                 <td>
                   <button class="link-button" type="button" @click="goScore(match)">
                     后台改分
@@ -703,14 +752,27 @@ select {
 
 .table-wrap {
   overflow: auto;
+  scrollbar-gutter: stable both-edges;
   border: 1px solid #e1e7f0;
   border-radius: 8px;
+}
+
+.list-table-wrap {
+  max-height: min(58vh, 680px);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   min-width: 560px;
+}
+
+.teams-panel table {
+  min-width: 720px;
+}
+
+.matches-panel table {
+  min-width: 860px;
 }
 
 th,
@@ -722,6 +784,9 @@ td {
 }
 
 th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: #f7f9fc;
   color: #45556f;
   font-size: 13px;

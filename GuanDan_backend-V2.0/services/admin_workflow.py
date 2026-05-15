@@ -23,6 +23,7 @@ import_registration_excel = None
 save_score_log = None
 generate_round_pairs = None
 fetch_all_fights = None
+fetch_all_fights_with_scores = None
 fetch_match_generation_source = None
 replace_fight_info = None
 clear_all_fight_cache_in_redis = None
@@ -84,6 +85,7 @@ def _load_dashboard_cache(required=None):
 def _load_services(required=None):
     global clear_all_tables, fetch_team_info_rows, import_registration_excel
     global save_score_log, generate_round_pairs, fetch_all_fights
+    global fetch_all_fights_with_scores
     global fetch_match_generation_source, replace_fight_info
     global clear_all_fight_cache_in_redis, apply_score_update
     global enqueue_score_update, is_writeback_enabled, build_score_update
@@ -95,6 +97,7 @@ def _load_services(required=None):
         "save_score_log",
         "generate_round_pairs",
         "fetch_all_fights",
+        "fetch_all_fights_with_scores",
         "fetch_match_generation_source",
         "replace_fight_info",
         "clear_all_fight_cache_in_redis",
@@ -132,19 +135,27 @@ def _load_services(required=None):
         generate_round_pairs = _generate_round_pairs
 
     if (
-        {"fetch_all_fights", "fetch_match_generation_source", "replace_fight_info"} & required
+        {
+            "fetch_all_fights",
+            "fetch_all_fights_with_scores",
+            "fetch_match_generation_source",
+            "replace_fight_info",
+        } & required
         and (
             fetch_all_fights is None
+            or fetch_all_fights_with_scores is None
             or fetch_match_generation_source is None
             or replace_fight_info is None
         )
     ):
         from services.match_service import (
             fetch_all_fights as _fetch_all_fights,
+            fetch_all_fights_with_scores as _fetch_all_fights_with_scores,
             fetch_match_generation_source as _fetch_match_generation_source,
             replace_fight_info as _replace_fight_info,
         )
         fetch_all_fights = _fetch_all_fights
+        fetch_all_fights_with_scores = _fetch_all_fights_with_scores
         fetch_match_generation_source = _fetch_match_generation_source
         replace_fight_info = _replace_fight_info
 
@@ -353,8 +364,8 @@ def generate_matches_workflow(get_db_connection, clear_local_cache=None):
 
 
 def get_all_matches(get_db_connection):
-    _load_services(("fetch_all_fights",))
-    return api_success("对阵列表已获取", {"matches": fetch_all_fights(get_db_connection)})
+    _load_services(("fetch_all_fights_with_scores",))
+    return api_success("对阵列表已获取", {"matches": fetch_all_fights_with_scores(get_db_connection)})
 
 
 def get_match_for_score(get_db_connection, load_fight_info, turn_num, table_num):

@@ -88,11 +88,17 @@ class TestAdminWorkflow(unittest.TestCase):
         self.assertEqual(build_score_error("得分未输入"), "score_invalid")
 
     def test_get_all_matches_uses_matches_data_key(self):
-        self.patch_workflow("fetch_all_fights", lambda get_db_connection: [(1, "A队")])
+        self.patch_workflow(
+            "fetch_all_fights_with_scores",
+            lambda get_db_connection: [{"table_no": 1, "team1_small_score": 4}],
+        )
 
         result = admin_workflow.get_all_matches(object())
 
-        self.assertEqual(result["data"], {"matches": [(1, "A队")]})
+        self.assertEqual(
+            result["data"],
+            {"matches": [{"table_no": 1, "team1_small_score": 4}]},
+        )
 
     def test_generate_matches_failure_uses_single_error_code(self):
         self.patch_workflow("fetch_match_generation_source", lambda get_db_connection: ([], []))
