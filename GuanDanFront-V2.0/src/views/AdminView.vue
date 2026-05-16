@@ -19,6 +19,10 @@ const overview = ref({
   time_message: '',
   teams: [],
   has_matches: false,
+  runtime_status: '',
+  flush_status: '',
+  last_flush_at: '',
+  flush_error: '',
   snapshot_updated_at: '',
 })
 const matches = ref([])
@@ -212,6 +216,10 @@ const loadOverview = async () => {
       time_message: data.time_message ?? '',
       teams: Array.isArray(data.teams) ? data.teams : [],
       has_matches: Boolean(data.has_matches),
+      runtime_status: data.runtime_status ?? '',
+      flush_status: data.flush_status ?? '',
+      last_flush_at: data.last_flush_at ?? '',
+      flush_error: data.flush_error ?? '',
       snapshot_updated_at: data.snapshot_updated_at ?? '',
     }
     selectedTurn.value = normalizedTurn === '' ? '' : String(normalizedTurn)
@@ -352,6 +360,7 @@ onMounted(refreshAll)
 
     <p v-if="error" class="status error">{{ error }}</p>
     <p v-else-if="message" class="status success">{{ message }}</p>
+    <p v-if="overview.flush_error" class="status error">MySQL 写回异常：{{ overview.flush_error }}</p>
 
     <section class="summary-grid" aria-label="后台概览">
       <article class="summary-card">
@@ -369,6 +378,14 @@ onMounted(refreshAll)
       <article class="summary-card">
         <span>对阵状态</span>
         <strong>{{ hasMatches ? '已有对阵' : '未生成' }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>运行状态</span>
+        <strong>{{ overview.runtime_status || '未知' }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>写回状态</span>
+        <strong>{{ overview.flush_status || '未知' }}</strong>
       </article>
     </section>
 
