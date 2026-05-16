@@ -1,4 +1,5 @@
 import json
+import time
 
 from services.redis_runtime import RedisRuntimeError, require_redis
 
@@ -48,6 +49,13 @@ def _normalize_row(row, columns=None):
     return list(row)
 
 
+def _fetch_all(cursor, sql, params=None):
+    cursor.execute(sql, params or ())
+    rows = cursor.fetchall()
+    columns = [column[0] for column in (cursor.description or [])]
+    return [_normalize_row(row, columns) for row in rows]
+
+
 def _require_initialized(client):
     state = client.hgetall(STATE_KEY)
     if state.get("schema_version") != SCHEMA_VERSION:
@@ -60,6 +68,12 @@ def _require_initialized(client):
 
 def initialize_empty_state():
     client = require_redis()
+    client.set(TEAMS_KEY, _dumps([]))
+    client.set(TEAM_LEVELS_KEY, _dumps([]))
+    for turn in (1, 2, 3):
+        client.set(_mini_teams_key(turn), _dumps([]))
+        client.set(_fights_key(turn), _dumps([]))
+    client.delete(DIRTY_SCORE_KEY, DIRTY_MATCHES_KEY, DIRTY_TEAMS_KEY)
     client.hset(
         STATE_KEY,
         mapping={
@@ -73,6 +87,43 @@ def initialize_empty_state():
             "flush_error": "",
         },
     )
+
+
+def load_from_mysql(get_db_connection):
+    """从 MySQL 加载运行态数据到 Redis，用于导入后初始化和冷启动恢复。"""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        teams = _fetch_all(cursor, "SELECT * FROM team_info")
+        team_levels = _fetch_all(cursor, "SELECT * FROM team_level")
+        mini_teams_by_turn = {}
+        fights_by_turn = {}
+        for turn in (1, 2, 3):
+            mini_teams_by_turn[turn] = _fetch_all(
+                cursor,
+                "SELECT * FROM mini_team_info WHERE turn = %s",
+                (turn,),
+            )
+            fights_by_turn[turn] = _fetch_all(
+                cursor,
+                "SELECT * FROM fight_info WHERE turn = %s",
+                (turn,),
+            )
+
+        initialize_empty_state()
+        write_teams(teams, mark_dirty=False)
+        write_team_levels(team_levels, mark_dirty=False)
+        for turn in (1, 2, 3):
+            write_mini_teams(turn, mini_teams_by_turn[turn])
+            write_fights(turn, fights_by_turn[turn], mark_dirty=False)
+        update_state(last_loaded_at=time.time(), flush_status="ok", flush_error="")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
 
 def get_state():

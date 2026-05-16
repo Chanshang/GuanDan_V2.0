@@ -44,6 +44,8 @@ runtime_get_current_turn = None
 runtime_write_fights = None
 runtime_read_mini_teams = None
 runtime_read_team_levels = None
+runtime_load_from_mysql = None
+runtime_initialize_empty_state = None
 
 
 MAX_TABLE_NUMBER = 22
@@ -63,6 +65,8 @@ def _load_runtime(required=None):
         "runtime_write_fights",
         "runtime_read_mini_teams",
         "runtime_read_team_levels",
+        "runtime_load_from_mysql",
+        "runtime_initialize_empty_state",
     )
     missing = {name for name in required if globals()[name] is None}
     if not missing:
@@ -102,6 +106,8 @@ def _load_runtime(required=None):
         "runtime_write_fights",
         "runtime_read_mini_teams",
         "runtime_read_team_levels",
+        "runtime_load_from_mysql",
+        "runtime_initialize_empty_state",
     }
     if missing & store_names:
         from services.runtime_store import (
@@ -112,6 +118,8 @@ def _load_runtime(required=None):
             write_fights as _runtime_write_fights,
             read_mini_teams as _runtime_read_mini_teams,
             read_team_levels as _runtime_read_team_levels,
+            load_from_mysql as _runtime_load_from_mysql,
+            initialize_empty_state as _runtime_initialize_empty_state,
         )
         imported.update(
             {
@@ -122,6 +130,8 @@ def _load_runtime(required=None):
                 "runtime_write_fights": _runtime_write_fights,
                 "runtime_read_mini_teams": _runtime_read_mini_teams,
                 "runtime_read_team_levels": _runtime_read_team_levels,
+                "runtime_load_from_mysql": _runtime_load_from_mysql,
+                "runtime_initialize_empty_state": _runtime_initialize_empty_state,
             }
         )
 
@@ -347,6 +357,7 @@ def get_overview(get_db_connection):
 def import_registration_file(file_storage, get_db_connection, upload_dir, clear_local_cache=None):
     _load_dashboard_cache(("reset_turn", "mark_snapshot_stale"))
     _load_services(("import_registration_excel", "clear_all_fight_cache_in_redis"))
+    _load_runtime(("runtime_load_from_mysql", "rebuild_all_views"))
     if not file_storage:
         return api_error("invalid_file", "请选择要上传的报名文件")
 
@@ -373,12 +384,15 @@ def import_registration_file(file_storage, get_db_connection, upload_dir, clear_
     clear_fight_cache(clear_local_cache)
     reset_turn()
     mark_snapshot_stale()
+    runtime_load_from_mysql(get_db_connection)
+    rebuild_all_views()
     return api_success("报名文件导入成功", result)
 
 
 def clear_business_data(get_db_connection, clear_local_cache=None):
     _load_dashboard_cache(("reset_turn", "mark_snapshot_stale"))
     _load_services(("clear_all_tables", "clear_all_fight_cache_in_redis"))
+    _load_runtime(("runtime_initialize_empty_state", "rebuild_all_views"))
     result = clear_all_tables(get_db_connection)
     if not result.get("ok"):
         return api_error("clear_failed", "业务数据清理失败", {"error": result.get("error")})
@@ -386,6 +400,8 @@ def clear_business_data(get_db_connection, clear_local_cache=None):
     clear_fight_cache(clear_local_cache)
     reset_turn()
     mark_snapshot_stale()
+    runtime_initialize_empty_state()
+    rebuild_all_views()
     return api_success("业务数据已清理")
 
 
@@ -418,6 +434,7 @@ def stop_timer_value():
 
 def generate_matches_workflow(get_db_connection, clear_local_cache=None):
     _load_services(("fetch_match_generation_source", "generate_round_pairs"))
+    _load_runtime(("runtime_write_fights", "rebuild_all_views"))
     teams, team_levels_list = fetch_match_generation_source(get_db_connection)
     match_result = generate_round_pairs(teams, team_levels_list, rounds=3)
     if not match_result.get("success"):
@@ -427,20 +444,41 @@ def generate_matches_workflow(get_db_connection, clear_local_cache=None):
             {"error": match_result.get("error")},
         )
 
-    _load_services(("replace_fight_info",))
-    write_result = replace_fight_info(
-        get_db_connection,
-        match_result["pairs"],
-        match_result["team_members"],
-        match_result["team_levels"],
-    )
-    if not write_result.get("ok"):
-        return api_error("match_generation_failed", "对阵保存失败", {"error": write_result.get("error")})
+    total_tables = len(match_result["team_members"]) // 2
+    if total_tables == 0:
+        return api_error("match_generation_failed", "对阵保存失败", {"error": "no_teams"})
+    expected_pairs = total_tables * 3
+    if len(match_result["pairs"]) != expected_pairs:
+        return api_error(
+            "match_generation_failed",
+            "对阵生成失败",
+            {"error": "invalid_pair_count"},
+        )
+
+    fights_by_turn = {turn: [] for turn in (1, 2, 3)}
+    for idx, (team_name_1, team_name_2) in enumerate(match_result["pairs"]):
+        turn = idx // total_tables + 1
+        fights_by_turn[turn].append(
+            {
+                "id": idx % total_tables + 1,
+                "team_name_1": team_name_1,
+                "members_1": match_result["team_members"][team_name_1],
+                "team_name_2": team_name_2,
+                "members_2": match_result["team_members"][team_name_2],
+                "turn": turn,
+                "team_level_1": match_result["team_levels"][team_name_1],
+                "team_level_2": match_result["team_levels"][team_name_2],
+            }
+        )
+
+    for turn, rows in fights_by_turn.items():
+        runtime_write_fights(turn, rows)
 
     _load_dashboard_cache(("mark_snapshot_stale",))
     clear_fight_cache(clear_local_cache)
     mark_snapshot_stale()
-    return api_success("对阵已生成", {"tables": len(match_result["pairs"])})
+    rebuild_all_views()
+    return api_success("对阵已生成", {"tables": total_tables})
 
 
 def get_all_matches(get_db_connection):
