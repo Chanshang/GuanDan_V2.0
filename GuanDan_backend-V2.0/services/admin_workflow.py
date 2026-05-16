@@ -32,9 +32,102 @@ enqueue_score_update = None
 is_writeback_enabled = None
 build_score_update = None
 check_match_exists = None
+read_admin_overview_view = None
+read_admin_matches_view = None
+rebuild_all_views = None
+rebuild_admin_matches_view = None
+rebuild_admin_overview_view = None
+runtime_get_match = None
+runtime_apply_score_result = None
+runtime_set_current_turn = None
+runtime_get_current_turn = None
+runtime_write_fights = None
+runtime_read_mini_teams = None
+runtime_read_team_levels = None
 
 
 MAX_TABLE_NUMBER = 22
+
+
+def _load_runtime(required=None):
+    required = required or (
+        "read_admin_overview_view",
+        "read_admin_matches_view",
+        "rebuild_all_views",
+        "rebuild_admin_matches_view",
+        "rebuild_admin_overview_view",
+        "runtime_get_match",
+        "runtime_apply_score_result",
+        "runtime_set_current_turn",
+        "runtime_get_current_turn",
+        "runtime_write_fights",
+        "runtime_read_mini_teams",
+        "runtime_read_team_levels",
+    )
+    missing = {name for name in required if globals()[name] is None}
+    if not missing:
+        return
+
+    imported = {}
+    view_names = {
+        "read_admin_overview_view",
+        "read_admin_matches_view",
+        "rebuild_all_views",
+        "rebuild_admin_matches_view",
+        "rebuild_admin_overview_view",
+    }
+    if missing & view_names:
+        from services.runtime_views import (
+            read_admin_overview_view as _read_admin_overview_view,
+            read_admin_matches_view as _read_admin_matches_view,
+            rebuild_all_views as _rebuild_all_views,
+            rebuild_admin_matches_view as _rebuild_admin_matches_view,
+            rebuild_admin_overview_view as _rebuild_admin_overview_view,
+        )
+        imported.update(
+            {
+                "read_admin_overview_view": _read_admin_overview_view,
+                "read_admin_matches_view": _read_admin_matches_view,
+                "rebuild_all_views": _rebuild_all_views,
+                "rebuild_admin_matches_view": _rebuild_admin_matches_view,
+                "rebuild_admin_overview_view": _rebuild_admin_overview_view,
+            }
+        )
+
+    store_names = {
+        "runtime_get_match",
+        "runtime_apply_score_result",
+        "runtime_set_current_turn",
+        "runtime_get_current_turn",
+        "runtime_write_fights",
+        "runtime_read_mini_teams",
+        "runtime_read_team_levels",
+    }
+    if missing & store_names:
+        from services.runtime_store import (
+            get_match as _runtime_get_match,
+            apply_score_result as _runtime_apply_score_result,
+            set_current_turn as _runtime_set_current_turn,
+            get_current_turn as _runtime_get_current_turn,
+            write_fights as _runtime_write_fights,
+            read_mini_teams as _runtime_read_mini_teams,
+            read_team_levels as _runtime_read_team_levels,
+        )
+        imported.update(
+            {
+                "runtime_get_match": _runtime_get_match,
+                "runtime_apply_score_result": _runtime_apply_score_result,
+                "runtime_set_current_turn": _runtime_set_current_turn,
+                "runtime_get_current_turn": _runtime_get_current_turn,
+                "runtime_write_fights": _runtime_write_fights,
+                "runtime_read_mini_teams": _runtime_read_mini_teams,
+                "runtime_read_team_levels": _runtime_read_team_levels,
+            }
+        )
+
+    for name in missing:
+        if globals()[name] is None:
+            globals()[name] = imported[name]
 
 
 def _load_dashboard_cache(required=None):
@@ -247,21 +340,8 @@ def find_match_info(fights, table_num):
 
 
 def get_overview(get_db_connection):
-    _load_dashboard_cache(("get_turn", "build_time_message", "get_snapshot_copy"))
-    _load_services(("fetch_team_info_rows", "fetch_all_fights"))
-    teams = fetch_team_info_rows(get_db_connection)
-    matches = fetch_all_fights(get_db_connection)
-    snapshot = get_snapshot_copy()
-    return api_success(
-        "后台概览已获取",
-        {
-            "turn": get_turn(),
-            "time_message": build_time_message(),
-            "teams": teams,
-            "has_matches": bool(matches),
-            "snapshot_updated_at": snapshot.get("updated_at"),
-        },
-    )
+    _load_runtime(("read_admin_overview_view",))
+    return api_success("后台概览已获取", read_admin_overview_view())
 
 
 def import_registration_file(file_storage, get_db_connection, upload_dir, clear_local_cache=None):
@@ -310,17 +390,17 @@ def clear_business_data(get_db_connection, clear_local_cache=None):
 
 
 def set_turn_value(value):
-    _load_dashboard_cache(("is_valid_turn", "reset_turn", "set_current_turn", "mark_snapshot_stale", "get_turn"))
+    _load_runtime(("runtime_set_current_turn", "rebuild_admin_overview_view"))
     turn = str(value).strip() if value is not None else ""
     if turn in {"", "null"}:
-        reset_turn()
-    elif turn and turn.isdigit() and is_valid_turn(turn):
-        set_current_turn(turn)
-    else:
+        turn = "null"
+    try:
+        saved_turn = runtime_set_current_turn(turn)
+    except ValueError:
         return api_error("invalid_turn", "轮次值无效")
 
-    mark_snapshot_stale()
-    return api_success("当前轮次已更新", {"turn": get_turn()})
+    rebuild_admin_overview_view()
+    return api_success("当前轮次已更新", {"turn": saved_turn})
 
 
 def start_timer_value():
@@ -364,15 +444,14 @@ def generate_matches_workflow(get_db_connection, clear_local_cache=None):
 
 
 def get_all_matches(get_db_connection):
-    _load_services(("fetch_all_fights_with_scores",))
-    return api_success("对阵列表已获取", {"matches": fetch_all_fights_with_scores(get_db_connection)})
+    _load_runtime(("read_admin_matches_view",))
+    return api_success("对阵列表已获取", read_admin_matches_view())
 
 
 def get_match_for_score(get_db_connection, load_fight_info, turn_num, table_num):
-    _load_dashboard_cache(("is_valid_turn",))
-    _load_services(("check_match_exists",))
+    _load_runtime(("runtime_get_match",))
     turn = str(turn_num).strip() if turn_num is not None else ""
-    if not turn.isdigit() or not is_valid_turn(turn):
+    if turn not in {"1", "2", "3"}:
         return api_error("invalid_turn", "轮次值无效")
 
     table = parse_table_number(table_num)
@@ -380,10 +459,7 @@ def get_match_for_score(get_db_connection, load_fight_info, turn_num, table_num)
         return api_error("invalid_table", "桌号无效")
 
     turn_int = int(turn)
-    if not check_match_exists(get_db_connection, table, turn_int):
-        return api_error("match_not_found", "未找到该桌对阵")
-
-    match_info = find_match_info(load_fight_info(turn_int), table)
+    match_info = runtime_get_match(turn_int, table)
     if match_info is None:
         return api_error("match_not_found", "未找到该桌对阵")
 
@@ -392,22 +468,24 @@ def get_match_for_score(get_db_connection, load_fight_info, turn_num, table_num)
 
 
 def get_match_for_current_turn(get_db_connection, load_fight_info, table_num):
-    _load_dashboard_cache(("get_turn", "is_valid_turn"))
-    current_turn = get_turn()
-    if not is_valid_turn(current_turn):
+    _load_runtime(("runtime_get_current_turn",))
+    current_turn = runtime_get_current_turn()
+    if current_turn not in {"1", "2", "3"}:
         return api_error("invalid_turn", "当前轮次未设置")
     return get_match_for_score(get_db_connection, load_fight_info, current_turn, table_num)
 
 
 def submit_score(get_db_connection, load_fight_info, turn_num, table_num, score_x, score_y, winner):
-    _load_dashboard_cache(("is_valid_turn", "mark_snapshot_stale"))
+    _load_runtime(
+        (
+            "runtime_apply_score_result",
+            "rebuild_admin_matches_view",
+            "rebuild_admin_overview_view",
+        )
+    )
     _load_services(
         (
-            "check_match_exists",
             "build_score_update",
-            "is_writeback_enabled",
-            "enqueue_score_update",
-            "apply_score_update",
             "save_score_log",
         )
     )
@@ -428,31 +506,11 @@ def submit_score(get_db_connection, load_fight_info, turn_num, table_num, score_
         message = "未选择最终局赢家" if error == "winner_required_when_tied" else "请输入合法的得分范围(2~32)"
         return api_error(error, message)
 
-    if is_writeback_enabled():
-        write_result = enqueue_score_update(
-            int(match_info["turn_num"]),
-            update_payload["small_scores"],
-            update_payload["big_scores"],
-        )
-        if not (write_result.get("ok") and write_result.get("queued")):
-            return api_error(
-                "score_write_failed",
-                "得分写回队列提交失败",
-                {"error": write_result.get("error")},
-            )
-        queued = True
-    else:
-        write_result = apply_score_update(
-            get_db_connection,
-            int(match_info["turn_num"]),
-            update_payload["small_scores"],
-            update_payload["big_scores"],
-        )
-        if not write_result.get("ok"):
-            return api_error("score_write_failed", "得分写入失败", {"error": write_result.get("error")})
-        queued = False
-
-    mark_snapshot_stale()
+    runtime_apply_score_result(
+        int(match_info["turn_num"]),
+        update_payload["small_scores"],
+        update_payload["big_scores"],
+    )
     save_score_log(
         match_info["turn_num"],
         match_info["table_num"],
@@ -463,20 +521,22 @@ def submit_score(get_db_connection, load_fight_info, turn_num, table_num, score_
         score_x,
         score_y,
     )
+    rebuild_admin_matches_view()
+    rebuild_admin_overview_view()
     return api_success(
         "得分已提交",
         {
             "turn_num": match_info["turn_num"],
             "table_num": match_info["table_num"],
-            "queued": queued,
+            "queued": True,
         },
     )
 
 
 def submit_score_for_current_turn(get_db_connection, load_fight_info, table_num, score_x, score_y, winner):
-    _load_dashboard_cache(("get_turn", "is_valid_turn"))
-    current_turn = get_turn()
-    if not is_valid_turn(current_turn):
+    _load_runtime(("runtime_get_current_turn",))
+    current_turn = runtime_get_current_turn()
+    if current_turn not in {"1", "2", "3"}:
         return api_error("invalid_turn", "当前轮次未设置")
     return submit_score(
         get_db_connection,
