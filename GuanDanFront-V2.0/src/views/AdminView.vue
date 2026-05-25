@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   clearBusinessData,
@@ -27,6 +27,7 @@ const overview = ref({
 })
 const matches = ref([])
 const selectedTurn = ref('')
+const selectedMatchTurn = ref('1')
 const selectedFile = ref(null)
 const fileInput = ref(null)
 const loadingOverview = ref(false)
@@ -37,7 +38,9 @@ const message = ref('')
 
 const teams = computed(() => Array.isArray(overview.value.teams) ? overview.value.teams : [])
 const hasMatches = computed(() => Boolean(overview.value.has_matches))
-const matchCount = computed(() => Array.isArray(matches.value) ? matches.value.length : 0)
+const visibleMatches = computed(() => matches.value.filter((match) => matchTurn(match) === selectedMatchTurn.value))
+const totalMatchCount = computed(() => Array.isArray(matches.value) ? matches.value.length : 0)
+const matchCount = computed(() => visibleMatches.value.length)
 const isBusy = computed(() => Boolean(working.value) || loadingOverview.value || loadingMatches.value)
 const currentTurnText = computed(() => formatTurn(overview.value.turn))
 const selectedFileName = computed(() => selectedFile.value?.name || '未选择文件')
@@ -60,6 +63,8 @@ const turnOptions = [
   { label: '第 3 轮', value: '3' },
 ]
 
+const matchTurnOptions = turnOptions.filter((option) => option.value)
+
 const normalizeResponse = (result, fallbackMessage) => {
   if (!result?.ok) {
     throw new Error(result?.message || result?.error || fallbackMessage)
@@ -72,7 +77,7 @@ const normalizeTurn = (turn) => {
   if (turn === null || turn === undefined || turn === '' || turn === 'null') {
     return ''
   }
-  return turn
+  return String(turn)
 }
 
 const formatTurn = (turn) => {
@@ -223,6 +228,9 @@ const loadOverview = async () => {
       snapshot_updated_at: data.snapshot_updated_at ?? '',
     }
     selectedTurn.value = normalizedTurn === '' ? '' : String(normalizedTurn)
+    if (normalizedTurn !== '') {
+      selectedMatchTurn.value = String(normalizedTurn)
+    }
   } catch (err) {
     error.value = err.message || '后台概览加载失败'
   } finally {
@@ -338,7 +346,16 @@ const goScreen = () => {
   router.push('/screen')
 }
 
-onMounted(refreshAll)
+onMounted(() => {
+  document.documentElement.classList.add('admin-route-active')
+  document.body.classList.add('admin-route-active')
+  refreshAll()
+})
+
+onBeforeUnmount(() => {
+  document.documentElement.classList.remove('admin-route-active')
+  document.body.classList.remove('admin-route-active')
+})
 </script>
 
 <template>
@@ -449,7 +466,7 @@ onMounted(refreshAll)
       <article class="panel">
         <div class="panel-title">
           <h2>对阵生成</h2>
-          <span>{{ matchCount }} 条对阵</span>
+          <span>{{ totalMatchCount }} 条对阵</span>
         </div>
         <button class="primary-button full" type="button" :disabled="isBusy" @click="handleGenerateMatches">
           生成/覆盖对阵
@@ -500,10 +517,24 @@ onMounted(refreshAll)
       <article class="panel matches-panel">
         <div class="panel-title">
           <h2>对阵列表</h2>
-          <span>{{ loadingMatches ? '正在加载...' : `${matchCount} 桌` }}</span>
+          <div class="panel-title-actions">
+            <span>{{ loadingMatches ? '正在加载...' : `${formatTurn(selectedMatchTurn)} ${matchCount} 桌` }}</span>
+            <div class="round-tabs" aria-label="对阵轮次">
+              <button
+                v-for="option in matchTurnOptions"
+                :key="option.value"
+                class="round-tab"
+                :class="{ active: selectedMatchTurn === option.value }"
+                type="button"
+                @click="selectedMatchTurn = option.value"
+              >
+                {{ option.value }}
+              </button>
+            </div>
+          </div>
         </div>
         <p v-if="loadingMatches" class="empty-text">正在加载对阵...</p>
-        <p v-else-if="!matches.length" class="empty-text">暂无对阵数据</p>
+        <p v-else-if="!visibleMatches.length" class="empty-text">{{ formatTurn(selectedMatchTurn) }}暂无对阵数据</p>
         <div v-else class="table-wrap list-table-wrap">
           <table>
             <thead>
@@ -519,7 +550,7 @@ onMounted(refreshAll)
             </thead>
             <tbody>
               <tr
-                v-for="(match, index) in matches"
+                v-for="(match, index) in visibleMatches"
                 :key="`${matchTurn(match)}-${matchTable(match, index)}`"
               >
                 <td>{{ formatTurn(matchTurn(match)) }}</td>
@@ -537,12 +568,37 @@ onMounted(refreshAll)
             </tbody>
           </table>
         </div>
+        <div v-if="matches.length" class="round-pager" aria-label="对阵分页">
+          <button
+            v-for="option in matchTurnOptions"
+            :key="`pager-${option.value}`"
+            class="round-tab"
+            :class="{ active: selectedMatchTurn === option.value }"
+            type="button"
+            @click="selectedMatchTurn = option.value"
+          >
+            {{ option.value }}
+          </button>
+        </div>
       </article>
     </section>
   </main>
 </template>
 
 <style scoped>
+:global(html.admin-route-active),
+:global(body.admin-route-active),
+:global(html.admin-route-active #app) {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
+:global(body.admin-route-active) {
+  width: 100%;
+  touch-action: auto;
+}
+
 .admin-page {
   min-height: 100vh;
   box-sizing: border-box;
@@ -652,8 +708,37 @@ h2 {
   margin-bottom: 16px;
 }
 
+.panel-title-actions,
+.round-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.round-pager {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .panel-title span {
   font-size: 13px;
+}
+
+.round-tab {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid #c8d3e4;
+  background: #fff;
+  color: #1f3556;
+}
+
+.round-tab.active {
+  border-color: #1f5fbf;
+  background: #1f5fbf;
+  color: #fff;
 }
 
 .status {
@@ -837,6 +922,7 @@ tr:last-child td {
 
   .page-header,
   .header-actions,
+  .panel-title-actions,
   .turn-row,
   .upload-row {
     align-items: stretch;

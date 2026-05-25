@@ -1,7 +1,7 @@
 ﻿// 应用常量定义
 
 // 定时器间隔（毫秒）
-export const TIMER_INTERVAL = 500
+export const TIMER_INTERVAL = 1000
 
 // 时间相关常量
 export const TIME_MESSAGES = {
@@ -28,13 +28,14 @@ export const TURN_CONFIG = {
 
 // 队伍数据切片配置
 export const TEAM_DATA_CONFIG = {
-  MAX_TEAMS: 6
+  MAX_TEAMS: 8,
+  ROTATION_INTERVAL_MS: 5000
 }
 
 // UI 文本常量
 export const UI_TEXT = {
-  LOADING_TITLE: '数据加载中，请稍候…',
-  GAME_TITLE: 'VCC 2025 中秋迎新暨第四届掼蛋大赛',
+  LOADING_TITLE: '匹配数据加载中，请稍候…',
+  GAME_TITLE: '2026毕业趴 x VCC第五届掼蛋大赛',
   QR_TITLE: '扫我计分',
   TIME_REMAINING: '剩余时间：',
   CURRENT_ROUND_TITLE: '轮当前得分',

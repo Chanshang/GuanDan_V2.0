@@ -1,5 +1,5 @@
 <script setup>
-import qrCodeImage from '@/assets/深色二维码.png'
+import qrCodeImage from '@/assets/第五届二维码.png'; // 替换为你的二维码图片路径
 </script>
 
 <template>
@@ -13,26 +13,26 @@ import qrCodeImage from '@/assets/深色二维码.png'
 <style scoped>
 /* 扫码计分入口固定在大屏右下区域，保留原二维码展示。 */
 .extra-info {
-  position: absolute;
-  bottom: 35px;
-  right: 655px;
-  width: 20%;
+  align-self: end;
+  justify-self: center;
+  width: min(100%, 240px);
   text-align: center;
+  min-width: 0;
 }
 
 .extra-info img {
-  width: 75%;
+  width: min(78%, 170px);
   display: block;
   margin: auto;
 }
 
 .extra-title {
   text-align: center;
-  font-size: 25px;
+  font-size: clamp(18px, 1.4vw, 25px);
   font-weight: bold;
   color: #fff;
-  text-shadow: 12px 12px 8px #2b4180;
-  margin-bottom: 0;
+  text-shadow: 2px 2px 4px #2b4180;
+  margin: 0 0 6px;
 }
 
 .score-link {
@@ -43,7 +43,7 @@ import qrCodeImage from '@/assets/深色二维码.png'
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   color: #17305f;
-  font-size: 16px;
+  font-size: clamp(13px, 1vw, 16px);
   font-weight: 700;
   line-height: 1.3;
   text-decoration: none;

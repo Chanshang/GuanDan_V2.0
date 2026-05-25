@@ -11,7 +11,7 @@
 
       <div class="rank-item header">
         <p class="rank-id">排名</p>
-        <p class="rank-office">办公室</p>
+        <p class="rank-office">战队</p>
         <p class="rank-big-score">大分</p>
         <p class="rank-small-score">小分</p>
       </div>
@@ -54,7 +54,7 @@
 
       <div class="rank-item header">
         <p class="rank-id">排名</p>
-        <p class="rank-office">办公室</p>
+        <p class="rank-office">战队</p>
         <p class="rank-big-score">大分</p>
         <p class="rank-small-score">小分</p>
       </div>
@@ -120,50 +120,59 @@ defineProps({
 /* 排行榜容器 */
 
 .ranks-container {
-  position: fixed;
-  top: 100px; /* 置顶显示，可根据需要调整 */
-  right: 40px; /* 靠右显示 */
-  display: flex;
-  flex-direction: row;
-  gap: 40px;
-  z-index: 10;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  z-index: 1;
 }
 
 .ranks {
-  width: 280px;
+  width: 100%;
+  min-width: 0;
+  max-height: 100%;
+  overflow: auto;
   background: rgba(20, 30, 60, 0.7);
-  border-radius: 16px;
-  padding: 0px 0px;
+  border-radius: 12px;
+  padding: 6px 8px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: -20px;
 }
 
 .rank-item {
   color: #fff;
-  font-size: 15px;
+  font-size: clamp(12px, 0.9vw, 15px);
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-weight: 800;
   text-align: center;
-  line-height: 0.6;    /* 行高更紧凑 */
+  line-height: 1.15;
+  min-height: 22px;
+}
+
+.rank-item p {
+  margin: 4px 0;
 }
 
 .rank-item.header {
   font-weight: bold;
-  margin-bottom: -10px;
   display: flex;
   justify-content: space-between;
 }
 
 .rank-title {
-  font-size: 20px;
+  font-size: clamp(16px, 1.3vw, 20px);
   font-weight: bold;
-  margin-bottom: 0px;
+  margin: 2px 0 4px;
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
+  line-height: 1.25;
 }
 
 .rank-id,
@@ -178,6 +187,8 @@ defineProps({
 .rank-office,
 .rank-team {
   flex: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* 让内容不换行 */
@@ -185,6 +196,12 @@ defineProps({
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+@media (max-width: 1180px) {
+  .ranks-container {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* .rank-item.header {

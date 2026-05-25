@@ -92,11 +92,11 @@ const toggleView = (viewType) => {
     </div>
 
     <!-- <div class="content-box"> -->
-    <!-- 在活动开始前显示 -->
-    <HomeScreen v-if="!activityStarted" />
-
     <!-- 数据加载界面 -->
-    <LoadingScreen v-else-if="isLoading" />
+    <LoadingScreen v-if="isLoading" />
+
+    <!-- 在活动开始前显示 -->
+    <HomeScreen v-else-if="!activityStarted" />
     <!-- 添加分组按钮 -->
     <!-- <button @click="showGrouping = !showGrouping" class="grouping-toggle">
       {{ showGrouping ? "隐藏分组" : "显示分组" }}
@@ -142,10 +142,11 @@ const toggleView = (viewType) => {
   height: 100vh;
   position: relative;
   /* overflow: hidden; */
-  background-image: url("src/assets/2025中秋背景.jpg");
+  background-image: url("@/assets/VCC第五届掼蛋背景图.png");
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
+  overflow: hidden;
 }
 
 /* 功能按钮组 */
@@ -196,13 +197,48 @@ const toggleView = (viewType) => {
 
 /* 主要内容区域 */
 .main-content {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "timer timer"
+    "tables rankings"
+    "tables qr";
+  gap: clamp(10px, 1.3vw, 20px);
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: clamp(10px, 1.4vw, 20px);
+}
+
+.main-content :deep(.timer) {
+  grid-area: timer;
+}
+
+.main-content :deep(.tables) {
+  grid-area: tables;
+  min-height: 0;
+}
+
+.main-content :deep(.ranks-container) {
+  grid-area: rankings;
+  min-height: 0;
+}
+
+.main-content :deep(.extra-info) {
+  grid-area: qr;
+}
+
+@media (max-width: 1180px) {
+  .main-content {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  }
 }
 
 /* 响应式设计 */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .function-buttons {
     top: 10px;
     left: 10px;
@@ -214,22 +250,18 @@ const toggleView = (viewType) => {
     padding: 10px 16px;
     font-size: 12px;
   }
-}
 
-/* 主要内容区域 - 使用网格布局 */
-.main-content {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: auto auto 1fr auto;
-  grid-template-areas:
-    "timer"
-    "rankings"
-    "tables"
-    "qr";
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-  box-sizing: border-box;
-  padding: 10px;
+  .main-content {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      "timer"
+      "tables"
+      "rankings"
+      "qr";
+    height: 100dvh;
+    overflow: auto;
+    padding-top: 58px;
+  }
 }
 </style>

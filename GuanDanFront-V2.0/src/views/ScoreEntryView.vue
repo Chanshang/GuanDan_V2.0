@@ -6,6 +6,7 @@ import { getCurrentScoreTurn } from '@/api/score.js'
 const router = useRouter()
 
 const loading = ref(false)
+const entering = ref(false)
 const message = ref('')
 const error = ref('')
 const currentTurn = ref('')
@@ -50,7 +51,10 @@ const enterScoreForm = () => {
     return
   }
 
-  router.push(`/score/${currentTurn.value}/${tableValue}`)
+  entering.value = true
+  router.push(`/score/${currentTurn.value}/${tableValue}`).finally(() => {
+    entering.value = false
+  })
 }
 
 onMounted(loadCurrentTurn)
@@ -76,15 +80,15 @@ onMounted(loadCurrentTurn)
           inputmode="numeric"
           autocomplete="off"
           placeholder="请输入桌号"
-          :disabled="loading"
+          :disabled="loading || entering"
         />
 
-        <button type="submit" :disabled="loading || !canEnter">
-          进入录分
+        <button type="submit" :disabled="loading || entering || !canEnter">
+          {{ entering ? '进入中...' : '进入录分' }}
         </button>
       </form>
 
-      <button class="secondary-button" type="button" :disabled="loading" @click="loadCurrentTurn">
+      <button class="secondary-button" type="button" :disabled="loading || entering" @click="loadCurrentTurn">
         重新加载轮次
       </button>
 

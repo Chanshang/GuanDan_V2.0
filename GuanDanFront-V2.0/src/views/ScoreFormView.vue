@@ -20,6 +20,7 @@ const isAdminMode = computed(() => router.currentRoute.value.query.mode === 'adm
 
 const loading = ref(false)
 const submitting = ref(false)
+const resetting = ref(false)
 const message = ref('')
 const error = ref('')
 const match = ref(null)
@@ -72,11 +73,11 @@ const validateForm = () => {
   const scoreY = Number(form.scoreY)
 
   if (!isValidScore(scoreX) || !isValidScore(scoreY)) {
-    return '请输入 2 到 32 之间的最终等级'
+    return '请输入 2 到 32 之间的最终级数'
   }
 
   if (scoreX === scoreY && !form.winner) {
-    return '双方最终等级相同，请选择最后一局赢家'
+    return '双方最终级数相同，请选择最后一局赢家'
   }
 
   return ''
@@ -122,6 +123,42 @@ const submitScore = async () => {
   }
 }
 
+const resetScore = async () => {
+  if (!isAdminMode.value || !match.value) {
+    return
+  }
+
+  const confirmed = window.confirm('确认要清空本桌两队的大分和小分吗？')
+  if (!confirmed) {
+    return
+  }
+
+  error.value = ''
+  message.value = ''
+  resetting.value = true
+  try {
+    const result = await submitAdminScore({
+      turn: props.turn,
+      table: props.table,
+      reset: true,
+    })
+
+    if (!result.ok) {
+      error.value = result.message || result.error || '得分重置失败'
+      return
+    }
+
+    form.scoreX = ''
+    form.scoreY = ''
+    form.winner = ''
+    message.value = result.message || '得分已重置'
+  } catch (err) {
+    error.value = err.message || '得分重置失败'
+  } finally {
+    resetting.value = false
+  }
+}
+
 onMounted(loadMatch)
 </script>
 
@@ -157,7 +194,7 @@ onMounted(loadMatch)
 
         <div class="score-grid">
           <label>
-            <span>{{ match.team1_name }} 最终等级</span>
+            <span>{{ match.team1_name }} 最终级数</span>
             <input
               v-model="form.scoreX"
               type="number"
@@ -169,7 +206,7 @@ onMounted(loadMatch)
             />
           </label>
           <label>
-            <span>{{ match.team2_name }} 最终等级</span>
+            <span>{{ match.team2_name }} 最终级数</span>
             <input
               v-model="form.scoreY"
               type="number"
@@ -194,9 +231,20 @@ onMounted(loadMatch)
           </label>
         </fieldset>
 
-        <button class="submit-button" type="submit" :disabled="submitting">
-          {{ submitting ? '提交中...' : '提交得分' }}
-        </button>
+        <div class="action-row">
+          <button class="submit-button" type="submit" :disabled="submitting || resetting">
+            {{ submitting ? '提交中...' : '提交得分' }}
+          </button>
+          <button
+            v-if="isAdminMode"
+            class="reset-button"
+            type="button"
+            :disabled="submitting || resetting"
+            @click="resetScore"
+          >
+            {{ resetting ? '重置中...' : '重置本桌得分' }}
+          </button>
+        </div>
       </form>
 
       <p v-if="error && match" class="status error">{{ error }}</p>
@@ -243,7 +291,8 @@ h1 {
 }
 
 .ghost-button,
-.submit-button {
+.submit-button,
+.reset-button {
   min-height: 44px;
   border: 0;
   border-radius: 8px;
@@ -258,12 +307,22 @@ h1 {
   color: #1f3556;
 }
 
-.submit-button {
+.submit-button,
+.reset-button {
   width: 100%;
   margin-top: 8px;
+  font-size: 17px;
+}
+
+.submit-button {
   background: #1f5fbf;
   color: #fff;
-  font-size: 17px;
+}
+
+.reset-button {
+  background: #fff;
+  color: #b42318;
+  border: 1px solid #f3b4aa;
 }
 
 button:disabled {
@@ -274,6 +333,11 @@ button:disabled {
 .score-form {
   display: grid;
   gap: 18px;
+}
+
+.action-row {
+  display: grid;
+  gap: 10px;
 }
 
 .match-grid,

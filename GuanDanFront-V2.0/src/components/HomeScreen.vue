@@ -13,7 +13,7 @@
   align-items: center;
   height: 100%;
   width: 100%;
-  background-image: url("/src/assets/2025中秋掼蛋.jpg");
+  background-image: url("@/assets/VCC第五届掼蛋封面图.png");
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
