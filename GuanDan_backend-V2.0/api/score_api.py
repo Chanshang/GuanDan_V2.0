@@ -1,6 +1,5 @@
 from flask import Blueprint, current_app, jsonify, request
 
-from api.dashboard_cache import get_turn, is_valid_turn
 from services import admin_workflow as workflow
 
 score_api_bp = Blueprint("score_api", __name__, url_prefix="/api/score")
@@ -20,8 +19,9 @@ def current_app_load_fight_info():
 
 @score_api_bp.route("/current-turn", methods=["GET"])
 def current_turn():
-    turn = get_turn()
-    if not is_valid_turn(turn):
+    workflow._load_runtime(("runtime_get_current_turn",))
+    turn = workflow.runtime_get_current_turn()
+    if turn not in {"1", "2", "3"}:
         return json_response(
             workflow.api_error("invalid_turn", "当前轮次未设置", {"turn": turn})
         )

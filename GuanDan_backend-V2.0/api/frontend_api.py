@@ -1,20 +1,25 @@
+import time
+
 from flask import Blueprint, jsonify
 
 from api.dashboard_cache import (
     is_valid_turn,
-    build_time_message,
 )
 from services.redis_runtime import RedisRuntimeError, runtime_error_to_api_payload
-from services.runtime_store import get_current_turn
-from services.runtime_views import read_dashboard_view
+from services.runtime_store import build_time_message, get_current_turn, get_state
+from services.runtime_views import read_dashboard_view, rebuild_dashboard_view
 
 frontend_api_bp = Blueprint("frontend_api", __name__)
 
 
 def _empty_dashboard_snapshot(turn):
+    state = get_state()
     return {
         "TURN": turn,
         "time_message": build_time_message(),
+        "timer_started_at": state.get("timer_started_at", ""),
+        "timer_total_seconds": state.get("timer_total_seconds", "3600"),
+        "server_time": time.time(),
         "error": "invalid turn",
         "matchesinfo": [],
         "scoresinfo": [],
@@ -29,14 +34,27 @@ def _empty_dashboard_snapshot(turn):
     }
 
 
+def _dashboard_matches_missing_levels(snapshot):
+    matches = snapshot.get("matchesinfo", [])
+    return any(isinstance(row, (list, tuple)) and 0 < len(row) < 7 for row in matches)
+
+
 def get_runtime_dashboard_snapshot():
     """读取 Redis 运行态大屏视图，并补齐进程内倒计时兼容文案。"""
     turn = get_current_turn()
     if not is_valid_turn(turn):
         return _empty_dashboard_snapshot(turn)
 
+    state = get_state()
     snapshot = dict(read_dashboard_view(turn) or {})
+    if not snapshot.get("TURN") or _dashboard_matches_missing_levels(snapshot):
+        snapshot = dict(rebuild_dashboard_view(int(turn)) or {})
+
+    snapshot["TURN"] = str(snapshot.get("TURN") or turn)
     snapshot["time_message"] = build_time_message()
+    snapshot["timer_started_at"] = state.get("timer_started_at", "")
+    snapshot["timer_total_seconds"] = state.get("timer_total_seconds", "3600")
+    snapshot["server_time"] = time.time()
     return snapshot
 
 

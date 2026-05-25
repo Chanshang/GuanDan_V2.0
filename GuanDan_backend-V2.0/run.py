@@ -27,6 +27,7 @@ from services.score_writeback_service import (
     enqueue_score_update,
 )
 from services.runtime_flush_service import ensure_runtime_flush_worker_started
+from services.runtime_view_refresh_service import ensure_runtime_view_refresh_worker_started
 from services.runtime_views import read_create_table_view, read_admin_matches_view
 from api.frontend_api import frontend_api_bp
 from api.admin_api import admin_api_bp
@@ -47,12 +48,13 @@ CORS(app, supports_credentials=True)  # 全局允许跨域请求
 # CORS(app, origins="http://localhost:5173", supports_credentials=True)
 # CORS(app, origins=["http://8.138.251.93:6888"], supports_credentials=True)
 
-app.secret_key = 'your_secret_key'
+app_config = Config()
+app.secret_key = app_config.SECRET_KEY
 app.register_blueprint(frontend_api_bp)
 app.register_blueprint(admin_api_bp)
 app.register_blueprint(score_api_bp)
 
-get_db_connection = Config().get_db_connection
+get_db_connection = app_config.get_db_connection
 
 MAX_TABLE_NUMBER = 22
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
@@ -326,6 +328,7 @@ def input_scores(table_num, turn_num, modify_type):
         request.form.get('score_x', '').strip().lower(),
         request.form.get('score_y', '').strip().lower(),
         request.form.get('winner', '').strip().lower(),
+        reset=request.form.get('reset_score') == '1',
     )
 
     if not result["ok"]:
@@ -341,4 +344,5 @@ def input_scores(table_num, turn_num, modify_type):
 if __name__ == '__main__':
     # 启动 Redis runtime 写回线程。
     ensure_runtime_flush_worker_started(get_db_connection)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    ensure_runtime_view_refresh_worker_started()
+    app.run(host=app_config.HOST, port=app_config.PORT, debug=app_config.DEBUG)

@@ -44,16 +44,17 @@ class TestAdminWorkflow(unittest.TestCase):
         )
         self.assertEqual(api_error("invalid_turn", "当前轮次未设置")["data"], {})
 
-    def test_get_overview_reads_runtime_view(self):
-        overview = {"turn": "2", "time_message": "12:34", "teams": [{"name": "A队"}]}
+    def test_get_overview_rebuilds_runtime_view_before_returning(self):
+        overview = {"turn": "2", "time_message": "12:34", "teams": [{"team_name": "A队"}]}
         calls = []
-        self.patch_workflow("read_admin_overview_view", lambda: calls.append("overview") or overview)
+        self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("rebuild") or overview)
+        self.patch_workflow("read_admin_overview_view", lambda: calls.append("read"))
 
         result = admin_workflow.get_overview(object())
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["data"], overview)
-        self.assertEqual(calls, ["overview"])
+        self.assertEqual(calls, ["rebuild"])
 
     def test_parse_table_number_accepts_only_valid_table_range(self):
         self.assertEqual(parse_table_number("3"), 3)
@@ -127,9 +128,13 @@ class TestAdminWorkflow(unittest.TestCase):
         self.assertEqual(result["error"], "match_generation_failed")
 
     def test_timer_success_payload_includes_time_message(self):
-        self.patch_workflow("start_round_timer", lambda: True)
-        self.patch_workflow("stop_round_timer", lambda: None)
-        self.patch_workflow("build_time_message", lambda: "59:59")
+        calls = []
+        self.patch_workflow("runtime_start_round_timer", lambda: calls.append("start") or True)
+        self.patch_workflow("runtime_stop_round_timer", lambda: calls.append("stop"))
+        self.patch_workflow("runtime_build_time_message", lambda: "59:59")
+        self.patch_workflow("runtime_get_current_turn", lambda: "2")
+        self.patch_workflow("rebuild_dashboard_view", lambda turn: calls.append(("dashboard", turn)))
+        self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("overview"))
 
         self.assertEqual(
             admin_workflow.start_timer_value()["data"],
@@ -139,10 +144,41 @@ class TestAdminWorkflow(unittest.TestCase):
             admin_workflow.stop_timer_value()["data"],
             {"time_message": "59:59"},
         )
+        self.assertEqual(
+            calls,
+            [
+                "start",
+                ("dashboard", 2),
+                "overview",
+                "stop",
+                ("dashboard", 2),
+                "overview",
+            ],
+        )
+
+    def test_start_timer_value_uses_runtime_timer_and_rebuilds_views(self):
+        calls = []
+
+        def fail_old_timer():
+            raise AssertionError("old timer must not run")
+
+        self.patch_workflow("start_round_timer", fail_old_timer)
+        self.patch_workflow("runtime_start_round_timer", lambda: calls.append("runtime_start") or True)
+        self.patch_workflow("runtime_build_time_message", lambda: "59:59")
+        self.patch_workflow("runtime_get_current_turn", lambda: "2")
+        self.patch_workflow("rebuild_dashboard_view", lambda turn: calls.append(("dashboard", turn)))
+        self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("overview"))
+
+        result = admin_workflow.start_timer_value()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual({"time_message": "59:59"}, result["data"])
+        self.assertEqual(calls, ["runtime_start", ("dashboard", 2), "overview"])
 
     def test_set_turn_value_writes_runtime_turn_and_rebuilds_overview(self):
         calls = []
         self.patch_workflow("runtime_set_current_turn", lambda turn: calls.append(("set", turn)) or turn)
+        self.patch_workflow("rebuild_dashboard_view", lambda turn: calls.append(("dashboard", turn)))
         self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("rebuild"))
 
         for value in (None, "", "null"):
@@ -164,6 +200,7 @@ class TestAdminWorkflow(unittest.TestCase):
                 ("set", "null"),
                 "rebuild",
                 ("set", "2"),
+                ("dashboard", 2),
                 "rebuild",
             ],
         )
@@ -268,7 +305,7 @@ class TestAdminWorkflow(unittest.TestCase):
         self.assertFalse(invalid_table["ok"])
         self.assertEqual(invalid_table["error"], "invalid_table")
 
-    def test_submit_score_applies_runtime_result_and_rebuilds_views(self):
+    def test_submit_score_applies_runtime_result_and_marks_dashboard_dirty(self):
         calls = []
 
         def fail(*args, **kwargs):
@@ -297,8 +334,7 @@ class TestAdminWorkflow(unittest.TestCase):
             "runtime_apply_score_result",
             lambda turn, small, big: calls.append(("runtime_apply", turn, small, big)) or {"ok": True},
         )
-        self.patch_workflow("rebuild_admin_matches_view", lambda: calls.append("matches"))
-        self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("overview"))
+        self.patch_workflow("runtime_mark_dashboard_dirty", lambda turn: calls.append(("dirty", turn)))
         self.patch_workflow("save_score_log", lambda *args: calls.append(("log", args)))
         self.patch_workflow("is_writeback_enabled", fail)
         self.patch_workflow("enqueue_score_update", fail)
@@ -309,11 +345,56 @@ class TestAdminWorkflow(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(
             result["data"],
-            {"turn_num": 2, "table_num": 3, "queued": True},
+            {"turn_num": 2, "table_num": 3, "queued": True, "snapshot_dirty": True},
         )
         self.assertEqual(calls[0][0], "runtime_apply")
         self.assertEqual(calls[1][0], "log")
-        self.assertEqual(calls[2:4], ["matches", "overview"])
+        self.assertEqual(calls[2], ("dirty", 2))
+
+    def test_submit_score_reset_clears_both_team_scores(self):
+        calls = []
+
+        self.patch_workflow(
+            "runtime_get_match",
+            lambda turn, table: {
+                "table_num": table,
+                "team1_name": "A队",
+                "team1_members": "张三、李四",
+                "team2_name": "B队",
+                "team2_members": "王五、赵六",
+                "turn_num": turn,
+            },
+        )
+        self.patch_workflow(
+            "runtime_apply_score_result",
+            lambda turn, small, big: calls.append(("runtime_apply", turn, small, big)) or {"ok": True},
+        )
+        self.patch_workflow("runtime_mark_dashboard_dirty", lambda turn: calls.append(("dirty", turn)))
+        self.patch_workflow("save_score_log", lambda *args: calls.append(("log", args)))
+
+        result = admin_workflow.submit_score(
+            object(),
+            lambda *args: None,
+            "2",
+            "3",
+            "",
+            "",
+            "",
+            reset=True,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("得分已重置", result["message"])
+        self.assertEqual(
+            calls[0],
+            (
+                "runtime_apply",
+                2,
+                {"A队": 0, "B队": 0},
+                {"A队": 0, "B队": 0},
+            ),
+        )
+        self.assertEqual(calls[2], ("dirty", 2))
 
     def test_submit_score_validation_failure_has_no_runtime_side_effects(self):
         def fail(*args, **kwargs):
@@ -332,8 +413,7 @@ class TestAdminWorkflow(unittest.TestCase):
         )
         self.patch_workflow("build_score_update", lambda **kwargs: {"ok": False, "error": "score_invalid"})
         self.patch_workflow("runtime_apply_score_result", fail)
-        self.patch_workflow("rebuild_admin_matches_view", fail)
-        self.patch_workflow("rebuild_admin_overview_view", fail)
+        self.patch_workflow("runtime_mark_dashboard_dirty", fail)
         self.patch_workflow("save_score_log", fail)
 
         result = admin_workflow.submit_score(object(), fail, "2", "3", "40", "8", "")
@@ -372,20 +452,19 @@ class TestAdminWorkflow(unittest.TestCase):
         )
         self.patch_workflow("runtime_apply_score_result", raise_runtime_error)
         self.patch_workflow("save_score_log", fail)
-        self.patch_workflow("rebuild_admin_matches_view", fail)
-        self.patch_workflow("rebuild_admin_overview_view", fail)
+        self.patch_workflow("runtime_mark_dashboard_dirty", fail)
 
         with self.assertRaises(RuntimeError):
             admin_workflow.submit_score(object(), fail, "2", "3", "10", "8", "")
 
         self.assertEqual(calls, ["runtime_apply"])
 
-    def test_submit_score_rebuild_error_bubbles_after_log(self):
+    def test_submit_score_dirty_mark_error_bubbles_after_log(self):
         calls = []
 
-        def raise_rebuild_error():
-            calls.append("matches")
-            raise RuntimeError("rebuild failed")
+        def raise_dirty_error(turn):
+            calls.append(("dirty", turn))
+            raise RuntimeError("dirty failed")
 
         self.patch_workflow(
             "runtime_get_match",
@@ -408,13 +487,15 @@ class TestAdminWorkflow(unittest.TestCase):
         )
         self.patch_workflow("runtime_apply_score_result", lambda *args: calls.append("runtime_apply"))
         self.patch_workflow("save_score_log", lambda *args: calls.append("log"))
-        self.patch_workflow("rebuild_admin_matches_view", raise_rebuild_error)
-        self.patch_workflow("rebuild_admin_overview_view", lambda: calls.append("overview"))
+        self.patch_workflow("runtime_mark_dashboard_dirty", raise_dirty_error)
 
         with self.assertRaises(RuntimeError):
             admin_workflow.submit_score(object(), lambda *args: None, "2", "3", "10", "8", "")
 
-        self.assertEqual(calls, ["runtime_apply", "log", "matches"])
+        self.assertEqual(
+            calls,
+            ["runtime_apply", "log", ("dirty", 2)],
+        )
 
     def test_load_runtime_does_not_overwrite_patched_globals_in_same_group(self):
         sentinel = object()

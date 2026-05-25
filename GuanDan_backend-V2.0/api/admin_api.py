@@ -107,5 +107,6 @@ def submit_scores():
             payload.get("score_x"),
             payload.get("score_y"),
             payload.get("winner"),
+            reset=bool(payload.get("reset")),
         )
     )

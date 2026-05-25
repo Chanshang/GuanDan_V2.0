@@ -52,7 +52,7 @@ class RuntimeApiIntegrationTests(unittest.TestCase):
     def test_dashboard_snapshot_reads_runtime_view(self):
         snapshot = {
             "TURN": "1",
-            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁"]],
+            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁", 5, 4]],
             "scoresinfo": [["A队", "甲/乙", 10]],
             "sumteaminfo": {
                 "current_turn": [[1, "A队", 2, 10]],
@@ -71,6 +71,9 @@ class RuntimeApiIntegrationTests(unittest.TestCase):
         ) as read_dashboard_view_mock, patch(
             "api.frontend_api.build_time_message",
             return_value="倒计时未开始",
+        ), patch(
+            "api.frontend_api.get_state",
+            return_value={"timer_started_at": "", "timer_total_seconds": "3600"},
         ):
             response = self.client.get("/dashboard_snapshot")
 
@@ -82,11 +85,46 @@ class RuntimeApiIntegrationTests(unittest.TestCase):
         self.assertEqual(snapshot["matchesinfo"], payload["matchesinfo"])
         read_dashboard_view_mock.assert_called_once_with("1")
 
+    def test_dashboard_snapshot_rebuilds_old_match_rows_without_levels(self):
+        old_snapshot = {
+            "TURN": "1",
+            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁"]],
+            "scoresinfo": [],
+            "sumteaminfo": {"current_turn": [], "total_until_turn": []},
+            "officescore": {"current_turn": [], "total_until_turn": []},
+        }
+        rebuilt_snapshot = {
+            "TURN": "1",
+            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁", 5, 4]],
+            "scoresinfo": [],
+            "sumteaminfo": {"current_turn": [], "total_until_turn": []},
+            "officescore": {"current_turn": [], "total_until_turn": []},
+        }
+
+        with patch("api.frontend_api.get_current_turn", return_value="1"), patch(
+            "api.frontend_api.read_dashboard_view",
+            return_value=old_snapshot,
+        ), patch(
+            "api.frontend_api.rebuild_dashboard_view",
+            return_value=rebuilt_snapshot,
+        ) as rebuild_mock, patch(
+            "api.frontend_api.build_time_message",
+            return_value="倒计时未开始",
+        ), patch(
+            "api.frontend_api.get_state",
+            return_value={"timer_started_at": "", "timer_total_seconds": "3600"},
+        ):
+            response = self.client.get("/dashboard_snapshot")
+
+        payload = response.get_json()
+        self.assertEqual(rebuilt_snapshot["matchesinfo"], payload["matchesinfo"])
+        rebuild_mock.assert_called_once_with(1)
+
     def test_split_endpoints_read_runtime_view(self):
         snapshot = {
             "TURN": "1",
             "time_message": "12:34",
-            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁"]],
+            "matchesinfo": [[1, "A队", "甲/乙", "B队", "丙/丁", 5, 4]],
             "scoresinfo": [["A队", "甲/乙", 10]],
             "sumteaminfo": {
                 "current_turn": [[1, "A队", 2, 10]],

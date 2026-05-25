@@ -13,6 +13,8 @@ _worker_started = False
 _worker_lock = threading.Lock()
 
 
+# 每10秒将dirty的比分和对阵信息写回数据库
+
 def _member_to_text(value):
     if isinstance(value, bytes):
         return value.decode("utf-8")

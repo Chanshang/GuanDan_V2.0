@@ -76,6 +76,18 @@
         <button type="submit">确认更新</button>
     </form>
 
+    {% if modify_type %}
+    <form
+        action="{{ url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=modify_type) }}"
+        method="POST"
+        onsubmit="return confirm('确认要清空本桌两队的大分和小分吗？')"
+        style="margin-top: 12px;"
+    >
+        <input type="hidden" name="reset_score" value="1">
+        <button type="submit">重置本桌得分</button>
+    </form>
+    {% endif %}
+
     <p><b>填写说明：</b></p>
     <p><b>此程序只需要玩家填写，某轮掼蛋对战后，双方升到的等级</b></p>
     <p><b>请填写等级对应的数字 (填写范围是2~17)</b></p>

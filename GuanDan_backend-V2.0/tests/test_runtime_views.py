@@ -78,6 +78,10 @@ class RuntimeViewsTestCase(unittest.TestCase):
 
         self.assertEqual("1", view["TURN"])
         self.assertEqual(1, len(view["matchesinfo"]))
+        self.assertEqual(
+            (1, "A队", "张三-李四", "B队", "王五-赵六", 5, 4),
+            view["matchesinfo"][0],
+        )
         self.assertEqual("A队", view["scoresinfo"][0][0])
         self.assertEqual("A队", view["sumteaminfo"]["current_turn"][0][1])
         self.assertIn("total_until_turn", view["sumteaminfo"])
@@ -152,6 +156,96 @@ class RuntimeViewsTestCase(unittest.TestCase):
 
         self.assertEqual("null", overview["turn"])
 
+    def test_admin_overview_flattens_team_info_rows_for_vue_table(self):
+        self.redis = FakeRedis()
+        runtime_store.require_redis = lambda: self.redis
+        runtime_views.require_redis = lambda: self.redis
+        runtime_store.initialize_empty_state()
+        runtime_store.write_teams(
+            [
+                {
+                    "id": 1,
+                    "office": "702",
+                    "team_name_1": "702-A",
+                    "members_1": "张三-李四",
+                    "team_name_2": "702-B",
+                    "members_2": "王五-赵六",
+                    "team_name_3": "702-C",
+                    "members_3": "空",
+                    "team_name_4": "702-D",
+                    "members_4": "甲-乙",
+                }
+            ]
+        )
+        runtime_store.write_team_levels(
+            [
+                {"team_name": "702-A", "level": "A"},
+                {"team_name": "702-B", "level": "B"},
+                {"team_name": "702-D", "level": "C"},
+            ]
+        )
+
+        overview = runtime_views.rebuild_admin_overview_view()
+
+        self.assertEqual(
+            [
+                {
+                    "team_name": "702-A",
+                    "members": "张三-李四",
+                    "office": "702",
+                    "level": "A",
+                },
+                {
+                    "team_name": "702-B",
+                    "members": "王五-赵六",
+                    "office": "702",
+                    "level": "B",
+                },
+                {
+                    "team_name": "702-D",
+                    "members": "甲-乙",
+                    "office": "702",
+                    "level": "C",
+                },
+            ],
+            overview["teams"],
+        )
+
+    def test_dashboard_total_rankings_include_previous_turns(self):
+        self.redis = FakeRedis()
+        runtime_store.require_redis = lambda: self.redis
+        runtime_views.require_redis = lambda: self.redis
+        runtime_store.initialize_empty_state()
+        for turn, small_score in ((1, 4), (2, 6)):
+            runtime_store.write_mini_teams(
+                turn,
+                [
+                    {
+                        "team_name": "A队",
+                        "turn": turn,
+                        "big_score": 2,
+                        "small_score": small_score,
+                        "office": "一办",
+                        "member_name": "张三-李四",
+                    }
+                ],
+            )
+
+        dashboard = runtime_views.rebuild_dashboard_view(2)
+
+        self.assertEqual(
+            [(1, "A队", 2, 6)],
+            dashboard["sumteaminfo"]["current_turn"],
+        )
+        self.assertEqual(
+            [(1, "A队", 4, 10)],
+            dashboard["sumteaminfo"]["total_until_turn"],
+        )
+        self.assertEqual(
+            [(1, "一办", 4, 10)],
+            dashboard["officescore"]["total_until_turn"],
+        )
+
     def test_list_mini_team_rows_do_not_use_turn_as_member_name(self):
         self.redis = FakeRedis()
         runtime_store.require_redis = lambda: self.redis
@@ -184,7 +278,7 @@ class RuntimeViewsTestCase(unittest.TestCase):
         self.assertEqual("A队", dashboard["scoresinfo"][0][0])
         self.assertNotEqual(1, dashboard["scoresinfo"][0][1])
         self.assertEqual(
-            (1, "A队", "张三-李四", "B队", "王五-赵六"),
+            (1, "A队", "张三-李四", "B队", "王五-赵六", 5, 4),
             dashboard["matchesinfo"][0],
         )
         match = admin_matches["matches"][0]

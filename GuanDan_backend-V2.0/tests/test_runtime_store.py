@@ -28,6 +28,20 @@ class RuntimeStoreTestCase(unittest.TestCase):
         self.assertEqual("2", saved)
         self.assertEqual("2", runtime_store.get_current_turn())
 
+    def test_start_and_stop_timer_use_runtime_state(self):
+        runtime_store.initialize_empty_state()
+
+        self.assertFalse(runtime_store.start_round_timer(started_at=100.0))
+        runtime_store.set_current_turn("2")
+        self.assertTrue(runtime_store.start_round_timer(started_at=100.0))
+        self.assertEqual("100.0", runtime_store.get_state()["timer_started_at"])
+        self.assertEqual("59:50", runtime_store.build_time_message(now=110.0))
+
+        runtime_store.stop_round_timer()
+
+        self.assertEqual("", runtime_store.get_state()["timer_started_at"])
+        self.assertEqual("倒计时未开始", runtime_store.build_time_message(now=120.0))
+
     def test_initialize_empty_state_records_blank_loaded_at_and_returns_state(self):
         runtime_store.initialize_empty_state()
 
@@ -191,6 +205,29 @@ class RuntimeStoreTestCase(unittest.TestCase):
             {"1:A队"},
             self.redis.smembers(runtime_store.DIRTY_SCORE_KEY),
         )
+
+    def test_mark_dashboard_dirty_marks_current_and_later_turns(self):
+        runtime_store.initialize_empty_state()
+
+        dirty_turns = runtime_store.mark_dashboard_dirty(2)
+
+        self.assertEqual(["2", "3"], dirty_turns)
+        self.assertEqual(
+            {"2", "3"},
+            self.redis.smembers(runtime_store.DIRTY_DASHBOARD_KEY),
+        )
+        self.assertEqual(
+            {"valid_turns": [2, 3], "malformed_turns": []},
+            runtime_store.read_dashboard_dirty_turns(),
+        )
+
+    def test_clear_dashboard_dirty_turns_removes_processed_members(self):
+        runtime_store.initialize_empty_state()
+        self.redis.sadd(runtime_store.DIRTY_DASHBOARD_KEY, "1", "broken")
+
+        runtime_store.clear_dashboard_dirty_turns([1, "broken"])
+
+        self.assertEqual(set(), self.redis.smembers(runtime_store.DIRTY_DASHBOARD_KEY))
 
     def test_apply_score_result_accepts_none_small_scores(self):
         runtime_store.initialize_empty_state()

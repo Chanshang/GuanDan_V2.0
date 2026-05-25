@@ -10,6 +10,7 @@ TEAM_LEVELS_KEY = "gd:team_levels"
 DIRTY_SCORE_KEY = "gd:dirty:score_updates"
 DIRTY_MATCHES_KEY = "gd:dirty:matches"
 DIRTY_TEAMS_KEY = "gd:dirty:teams"
+DIRTY_DASHBOARD_KEY = "gd:dirty:dashboard"
 SCHEMA_VERSION = "1"
 VALID_TURNS = {"1", "2", "3"}
 MINI_TEAM_TEAM_NAME_INDEX = 0
@@ -73,7 +74,7 @@ def initialize_empty_state():
     for turn in (1, 2, 3):
         client.set(_mini_teams_key(turn), _dumps([]))
         client.set(_fights_key(turn), _dumps([]))
-    client.delete(DIRTY_SCORE_KEY, DIRTY_MATCHES_KEY, DIRTY_TEAMS_KEY)
+    client.delete(DIRTY_SCORE_KEY, DIRTY_MATCHES_KEY, DIRTY_TEAMS_KEY, DIRTY_DASHBOARD_KEY)
     client.hset(
         STATE_KEY,
         mapping={
@@ -161,6 +162,40 @@ def set_current_turn(turn):
 
     update_state(current_turn=saved)
     return saved
+
+
+def start_round_timer(started_at=None):
+    current_turn = get_current_turn()
+    if current_turn not in VALID_TURNS:
+        return False
+
+    if started_at is None:
+        started_at = time.time()
+    update_state(timer_started_at=started_at)
+    return True
+
+
+def stop_round_timer():
+    update_state(timer_started_at="")
+
+
+def build_time_message(now=None):
+    state = get_state()
+    started_at = state.get("timer_started_at")
+    if not started_at:
+        return "倒计时未开始"
+
+    try:
+        started_at = float(started_at)
+    except (TypeError, ValueError):
+        return "倒计时未开始"
+
+    if now is None:
+        now = time.time()
+    total_seconds = int(state.get("timer_total_seconds") or 3600)
+    remaining = max(0, total_seconds - int(float(now) - started_at))
+    minutes, seconds = divmod(remaining, 60)
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def write_teams(rows, columns=None, mark_dirty=False):
@@ -288,3 +323,51 @@ def apply_score_result(turn, small_scores, big_scores):
 
     write_mini_teams(turn, rows)
     return rows
+
+
+def mark_dashboard_dirty(from_turn):
+    """标记大屏快照需要异步刷新。
+
+    某一轮录分会影响当前轮排名，也会影响后续轮次的累计排名，所以从当前轮到第三轮
+    都需要重建。
+    """
+    client = require_redis()
+    _require_initialized(client)
+    start_turn = int(from_turn)
+    if start_turn not in (1, 2, 3):
+        raise ValueError("invalid_turn")
+    dirty_turns = [str(turn) for turn in range(start_turn, 4)]
+    client.sadd(DIRTY_DASHBOARD_KEY, *dirty_turns)
+    return dirty_turns
+
+
+def read_dashboard_dirty_turns():
+    client = require_redis()
+    _require_initialized(client)
+    valid_turns = []
+    malformed_turns = []
+    for raw_turn in client.smembers(DIRTY_DASHBOARD_KEY):
+        if isinstance(raw_turn, bytes):
+            raw_turn = raw_turn.decode("utf-8")
+        text = str(raw_turn)
+        try:
+            turn = int(text)
+        except (TypeError, ValueError):
+            malformed_turns.append(text)
+            continue
+        if turn in (1, 2, 3):
+            valid_turns.append(turn)
+        else:
+            malformed_turns.append(text)
+    return {
+        "valid_turns": sorted(set(valid_turns)),
+        "malformed_turns": sorted(set(malformed_turns)),
+    }
+
+
+def clear_dashboard_dirty_turns(turns):
+    client = require_redis()
+    _require_initialized(client)
+    members = [str(turn) for turn in turns]
+    if members:
+        client.srem(DIRTY_DASHBOARD_KEY, *members)
