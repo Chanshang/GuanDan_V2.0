@@ -58,7 +58,7 @@ GuanDan V2.0 是面向线下掼蛋赛事的管理与大屏展示系统，覆盖�
 cd GuanDan_backend-V2.0
 # pip install -r requirements.txt
 # 后端通过conda进行环境管理，已经配置好了环境
-conda activate flask_app_env
+conda activate flask_app_env   # C:\Users\Administrator\miniconda3\envs\flask_app_env
 python run.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
