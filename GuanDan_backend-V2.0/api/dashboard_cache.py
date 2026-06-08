@@ -85,56 +85,18 @@ def build_time_message():
 
 
 def mark_snapshot_stale():
-    """将聚合快照标记为过期，下次会触发刷新。"""
-    with _snapshot_lock:
-        _dashboard_snapshot["updated_at"] = 0.0
+    """兼容旧调用：运行态大屏视图由 Redis 维护，此处不再标记进程内快照。"""
+    return None
 
 
 def refresh_dashboard_snapshot_once():
-    """执行一次数据库读取并更新聚合快照。"""
-    turn = TURN
-    new_snapshot = {
-        "turn": turn,
-        "updated_at": time.time(),  # 这个部分关键，每次更新会刷新这个时间戳，过期逻辑会基于它判断
-        "matchesinfo": [],
-        "scoresinfo": [],
-        "team_current_full": [],
-        "team_total_full": [],
-        "office_current": [],
-        "office_total": [],
-    }
-
-    if is_valid_turn(turn):
-        matches = fetch_matches_by_turn(get_db_connection, turn)
-        scores = fetch_scores_by_turn(get_db_connection, turn)
-        team_current, team_total = fetch_team_rankings(get_db_connection, turn)
-        office_current, office_total = fetch_office_rankings(get_db_connection, turn)
-
-        new_snapshot["matchesinfo"] = matches
-        new_snapshot["scoresinfo"] = scores
-        new_snapshot["team_current_full"] = team_current
-        new_snapshot["team_total_full"] = team_total
-        new_snapshot["office_current"] = office_current
-        new_snapshot["office_total"] = office_total
-
-    with _snapshot_lock:
-        _dashboard_snapshot.update(new_snapshot)
-        print(f"Dashboard snapshot refreshed for turn {turn} at {new_snapshot['updated_at']}")
+    """兼容旧调用：Redis 运行态接管后不再刷新进程内快照。"""
+    return None
 
 
 def ensure_dashboard_snapshot_fresh(force_refresh=False):
-    """确保聚合快照可用：过期则刷新。"""
-    with _snapshot_lock:
-        last_updated = _dashboard_snapshot["updated_at"]
-
-    # 防止进程猝死，仍有 8s 的过期刷新保护
-    should_refresh = force_refresh or (time.time() - last_updated > SNAPSHOT_STALE_SECONDS)
-    if should_refresh:
-        try:
-            refresh_dashboard_snapshot_once()
-        except Exception:
-            # 快照刷新失败时，仍返回旧快照，避免直接把接口打挂
-            pass
+    """兼容旧调用：不再触发 MySQL 刷新或进程内快照重建。"""
+    return None
 
 
 def get_snapshot_copy():
@@ -161,26 +123,10 @@ def slice_team_rankings_for_screen(team_current_full, team_total_full):
 
 # 防止进程猝死，仍有 8s 的过期刷新保护
 def background_snapshot_worker():
-    """后台定时刷新聚合快照。"""
-    while True:
-        try:
-            refresh_dashboard_snapshot_once()
-        except Exception:
-            pass
-        time.sleep(SNAPSHOT_REFRESH_SECONDS)
+    """兼容旧调用：后台进程内快照刷新已停用。"""
+    return None
 
 
 def ensure_snapshot_worker_started():
-    """确保后台刷新线程只启动一次。"""
-    global _snapshot_worker_started
-    if _snapshot_worker_started:
-        return
-
-    with _snapshot_lock:
-        if _snapshot_worker_started:
-            return
-
-        worker = threading.Thread(target=background_snapshot_worker, daemon=True)
-        worker.start()
-        _snapshot_worker_started = True
-
+    """兼容旧调用：不再启动后台快照线程。"""
+    return None

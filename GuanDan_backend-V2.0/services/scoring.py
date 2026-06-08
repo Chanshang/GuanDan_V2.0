@@ -19,10 +19,10 @@ def build_score_update(team1_name, team2_name, score_x_raw, score_y_raw, winner_
     team2 = str(team2_name).lower()
 
     if score_x is None or score_y is None:
-        return {"ok": False, "error": "得分未输入"}
+        return {"ok": False, "error": "score_invalid"}
 
     if score_x == score_y and winner not in {team1, team2}:
-        return {"ok": False, "error": "未选择最终局赢家"}
+        return {"ok": False, "error": "winner_required_when_tied"}
 
     small_scores = {
         team1_name: score_x - score_y,

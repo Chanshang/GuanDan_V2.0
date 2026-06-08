@@ -4,6 +4,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from app.config import Config
+from services import admin_workflow as workflow
 from services.clear_all_service import clear_all_tables
 from services.import_service import import_registration_excel, fetch_team_info_rows
 from services.log_service import save_score_log
@@ -24,22 +25,20 @@ from services.redis_cache_service import (
 from services.score_writeback_service import (
     is_writeback_enabled,
     enqueue_score_update,
-    ensure_writeback_worker_started,
 )
-from services.stats_service import (
-    fetch_create_table_rows,
-    check_match_exists,
-)
+from services.runtime_flush_service import ensure_runtime_flush_worker_started
+from services.runtime_view_refresh_service import ensure_runtime_view_refresh_worker_started
+from services.runtime_views import read_create_table_view, read_admin_matches_view
 from api.frontend_api import frontend_api_bp
+from api.admin_api import admin_api_bp
+from api.score_api import score_api_bp
 from api.dashboard_cache import (
-    is_valid_turn,
     get_turn,
     set_turn as set_current_turn,
     reset_turn,
     start_round_timer,
     stop_round_timer,
     mark_snapshot_stale,
-    ensure_snapshot_worker_started,
 )
 
 app = Flask(__name__)
@@ -49,13 +48,18 @@ CORS(app, supports_credentials=True)  # 全局允许跨域请求
 # CORS(app, origins="http://localhost:5173", supports_credentials=True)
 # CORS(app, origins=["http://8.138.251.93:6888"], supports_credentials=True)
 
-app.secret_key = 'your_secret_key'
+app_config = Config()
+app.secret_key = app_config.SECRET_KEY
 app.register_blueprint(frontend_api_bp)
+app.register_blueprint(admin_api_bp)
+app.register_blueprint(score_api_bp)
 
-get_db_connection = Config().get_db_connection
+get_db_connection = app_config.get_db_connection
 
 MAX_TABLE_NUMBER = 22
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
+app.config["GUANDAN_GET_DB_CONNECTION"] = get_db_connection
+app.config["GUANDAN_UPLOAD_DIR"] = UPLOAD_DIR
 
 
 # 对阵信息缓存（用于录分页面）
@@ -64,6 +68,54 @@ CACHE_TTL = 60000000  # 缓存有效期（秒）
 # Redis 读缓存生存时间（秒）
 REDIS_FIGHT_CACHE_TTL = 300
 play_button_message = False
+
+
+def _adapt_create_table_row(rank, row):
+    if isinstance(row, dict):
+        team = row.get("team", row)
+        fight_id = row.get("fight_id", "")
+    else:
+        team = row
+        fight_id = ""
+
+    if isinstance(team, dict):
+        return (
+            rank,
+            team.get("id", ""),
+            team.get("office", ""),
+            team.get("team_name", ""),
+            team.get("member_name", ""),
+            team.get("big_score", ""),
+            team.get("small_score", ""),
+            team.get("turn", ""),
+            fight_id,
+        )
+
+    if isinstance(team, (list, tuple)):
+        team_name = team[0] if len(team) > 0 else ""
+        turn = team[1] if len(team) > 1 else ""
+        big_score = team[2] if len(team) > 2 else ""
+        small_score = team[3] if len(team) > 3 else ""
+        return (rank, "", "", team_name, "", big_score, small_score, turn, fight_id)
+
+    return (rank, "", "", "", "", "", "", "", fight_id)
+
+
+def _adapt_admin_match_row(row):
+    if isinstance(row, (list, tuple)):
+        return tuple(row)
+    if not isinstance(row, dict):
+        return tuple()
+    return (
+        row.get("table_no", ""),
+        row.get("team_name_1", ""),
+        row.get("members_1", ""),
+        row.get("team_name_2", ""),
+        row.get("members_2", ""),
+        row.get("turn", ""),
+        row.get("team_level_1", ""),
+        row.get("team_level_2", ""),
+    )
 
 
 def clear_fight_cache():
@@ -99,6 +151,10 @@ def load_fight_info(turn_num):
     write_fight_info_to_redis(turn_num, rows, ttl_seconds=REDIS_FIGHT_CACHE_TTL)
     return rows
 
+
+app.config["GUANDAN_CLEAR_FIGHT_CACHE"] = clear_fight_cache
+app.config["GUANDAN_LOAD_FIGHT_INFO"] = load_fight_info
+
 ################################################################
 # 下面是后台功能接口
 
@@ -112,31 +168,23 @@ def play_button():
 
 @app.route('/stop_timer', methods=['POST'])
 def stop_timer():
-    stop_round_timer()
-    flash("已暂停计时", 'success')
+    result = workflow.stop_timer_value()
+    flash(result["message"], "success" if result["ok"] else "danger")
     return redirect(url_for('create_table'))
 
 
 @app.route('/start_timer', methods=['POST'])
 def start_timer():
-    if start_round_timer():
-        flash("已开始计时", 'success')
-    else:
-        flash("当前轮次未设置，无法开始计时", 'danger')
+    result = workflow.start_timer_value()
+    flash(result["message"], "success" if result["ok"] else "danger")
     return redirect(url_for('create_table'))
 
 
 # 清空所有业务表
 @app.route('/clear_tables', methods=['POST'])
 def clear_tables():
-    result = clear_all_tables(get_db_connection)
-    if result.get('ok'):
-        clear_fight_cache()
-        reset_turn()
-        mark_snapshot_stale()
-        flash('All tables have been cleared', 'success')
-    else:
-        flash(f"Failed to clear tables: {result.get('error', 'unknown error')}", 'danger')
+    result = workflow.clear_business_data(get_db_connection, clear_fight_cache)
+    flash(result["message"], "success" if result["ok"] else "danger")
     return redirect(url_for('index'))
 
 
@@ -145,32 +193,8 @@ def clear_tables():
 def index():
     if request.method == 'POST':
         file = request.files.get('file')
-        if not file:
-            flash('Please choose a file to upload', 'danger')
-            return redirect(url_for('index'))
-
-        if not file.filename or not file.filename.endswith('.xlsx'):
-            flash('Please upload an .xlsx file', 'danger')
-            return redirect(url_for('index'))
-
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        filename = secure_filename(file.filename)
-        if not filename:
-            flash('Invalid filename', 'danger')
-            return redirect(url_for('index'))
-
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        file.save(filepath)
-
-        import_result = import_registration_excel(filepath, get_db_connection)
-        if not import_result.get('ok'):
-            flash(f"Import failed: {import_result.get('error', 'unknown error')}", 'danger')
-            return redirect(url_for('index'))
-
-        clear_fight_cache()
-        reset_turn()
-        mark_snapshot_stale()
-        flash('File imported successfully', 'success')
+        result = workflow.import_registration_file(file, get_db_connection, UPLOAD_DIR, clear_fight_cache)
+        flash(result["message"], "success" if result["ok"] else "danger")
         return redirect(url_for('index'))
 
     rows = fetch_team_info_rows(get_db_connection)
@@ -179,23 +203,20 @@ def index():
 
 @app.route('/set_turn', methods=['POST'])
 def set_turn():
-    new_turn = request.form.get('turn')
-    if new_turn == 'null':
-        reset_turn()
-    elif new_turn and new_turn.isdigit() and is_valid_turn(new_turn):
-        set_current_turn(str(new_turn))
-    else:
-        flash('Invalid TURN value', 'danger')
-
-    mark_snapshot_stale()
+    result = workflow.set_turn_value(request.form.get('turn'))
+    flash(result["message"], "success" if result["ok"] else "danger")
     return redirect(url_for('create_table'))
 
 
 # 第二个页面：展示 mini_team_info 得分表
 @app.route('/create_table', methods=['GET'])
 def create_table():
-    mini_team_info = fetch_create_table_rows(get_db_connection)
-    mini_team_info_with_rank = [(i + 1, *row) for i, row in enumerate(mini_team_info)]
+    view = read_create_table_view()
+    rows = view.get('rows', [])
+    mini_team_info_with_rank = [
+        _adapt_create_table_row(i + 1, row)
+        for i, row in enumerate(rows)
+    ]
     return render_template(
         'create_table.html',
         mini_team_info=mini_team_info_with_rank,
@@ -207,46 +228,36 @@ def create_table():
 @app.route('/generate_matches', methods=['POST', 'GET'])
 def generate_matches():
     if request.method == 'POST':
-        teams, team_levels_list = fetch_match_generation_source(get_db_connection)
-
-        match_result = generate_round_pairs(teams, team_levels_list, rounds=3)
-        if not match_result['success']:
-            flash('Failed to generate matches, please try again', 'danger')
-            return redirect(url_for('generate_matches'))
-
-        write_result = replace_fight_info(
-            get_db_connection,
-            match_result['pairs'],
-            match_result['team_members'],
-            match_result['team_levels'],
-        )
-        clear_fight_cache()
-        mark_snapshot_stale()
-        if not write_result.get('ok'):
-            flash(f"Failed to save matches: {write_result.get('error', 'unknown error')}", 'danger')
-            return redirect(url_for('generate_matches'))
-
+        result = workflow.generate_matches_workflow(get_db_connection, clear_fight_cache)
+        flash(result["message"], "success" if result["ok"] else "danger")
         return redirect(url_for('generate_matches'))
 
-    fights = fetch_all_fights(get_db_connection)
+    view = read_admin_matches_view()
+    fights = [_adapt_admin_match_row(row) for row in view.get('matches', [])]
     return render_template('generate_matches.html', fights=fights)
 
 
 @app.route('/select_table', methods=['GET', 'POST'])
 def select_table():
     if request.method == 'POST':
-        table_num = int(request.form['table_num'])
-        current_turn = get_turn()
-        if not is_valid_turn(current_turn):
-            flash('Current turn is not set', 'danger')
+        result = workflow.get_match_for_current_turn(
+            get_db_connection,
+            load_fight_info,
+            request.form.get('table_num'),
+        )
+        if not result["ok"]:
+            flash(result["message"], 'danger')
             return redirect(url_for('select_table'))
 
-        turn_num = int(current_turn)
-        if table_num > MAX_TABLE_NUMBER or table_num < 1:
-            flash(f'Invalid table number: {table_num}', 'danger')
-            return redirect(url_for('select_table'))
-
-        return redirect(url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=0))
+        match_info = result["data"]
+        return redirect(
+            url_for(
+                'input_scores',
+                table_num=match_info["table_num"],
+                turn_num=match_info["turn_num"],
+                modify_type=0,
+            )
+        )
 
     return render_template('select_table.html')
 
@@ -255,19 +266,28 @@ def select_table():
 @app.route('/modify_select_table', methods=['GET', 'POST'])
 def modify_select_table():
     if request.method == 'POST':
-        table_num = int(request.form['table_num'])
-        turn_num = int(request.form['turn_num'])
-
-        if not is_valid_turn(turn_num):
-            flash(f"无效的轮次 {turn_num}", 'danger')
+        result = workflow.get_match_for_score(
+            get_db_connection,
+            load_fight_info,
+            request.form.get('turn_num'),
+            request.form.get('table_num'),
+        )
+        if not result["ok"]:
+            if result.get("error") in {"invalid_table", "match_not_found"}:
+                flash(f"无效的桌号 {request.form.get('table_num')}", 'danger')
+            else:
+                flash(result["message"], 'danger')
             return redirect(url_for('modify_select_table'))
 
-        match_exists = check_match_exists(get_db_connection, table_num, turn_num)
-        if not match_exists:
-            flash(f"无效的桌号 {table_num}", 'danger')
-            return redirect(url_for('modify_select_table'))
-
-        return redirect(url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=1))
+        match_info = result["data"]
+        return redirect(
+            url_for(
+                'input_scores',
+                table_num=match_info["table_num"],
+                turn_num=match_info["turn_num"],
+                modify_type=1,
+            )
+        )
 
     return render_template('modify_select_table.html')
 
@@ -275,86 +295,54 @@ def modify_select_table():
 # 第六个页面：根据桌号更新比分
 @app.route('/input_scores/<int:table_num>/<int:turn_num>/<int:modify_type>', methods=['GET', 'POST'])
 def input_scores(table_num, turn_num, modify_type):
-    fights = load_fight_info(turn_num)
-    match_info = next((f[1:] for f in fights if f[0] == table_num), None)
-
-    if not match_info:
-        flash("Match info not found for this table", "danger")
-        return redirect(url_for('select_table'))
-
-    team1_name, team1_members, team2_name, team2_members = match_info
-
     if request.method == 'GET':
+        result = workflow.get_match_for_score(
+            get_db_connection,
+            load_fight_info,
+            turn_num,
+            table_num,
+        )
+        if not result["ok"]:
+            flash(result["message"], "danger")
+            if modify_type:
+                return redirect(url_for('modify_select_table'))
+            return redirect(url_for('select_table'))
+
+        match_info = result["data"]
         return render_template(
             'input_scores.html',
             turn_num=turn_num,
             table_num=table_num,
             modify_type=modify_type,
-            team1_name=team1_name,
-            team2_name=team2_name,
-            team1_members=team1_members,
-            team2_members=team2_members,
+            team1_name=match_info["team1_name"],
+            team2_name=match_info["team2_name"],
+            team1_members=match_info["team1_members"],
+            team2_members=match_info["team2_members"],
         )
 
-    score_x = request.form.get('score_x', '').strip().lower()
-    score_y = request.form.get('score_y', '').strip().lower()
-    winner = request.form.get('winner', '').strip().lower()
-
-    update_payload = build_score_update(
-        team1_name=team1_name,
-        team2_name=team2_name,
-        score_x_raw=score_x,
-        score_y_raw=score_y,
-        winner_raw=winner,
+    result = workflow.submit_score(
+        get_db_connection,
+        load_fight_info,
+        turn_num,
+        table_num,
+        request.form.get('score_x', '').strip().lower(),
+        request.form.get('score_y', '').strip().lower(),
+        request.form.get('winner', '').strip().lower(),
+        reset=request.form.get('reset_score') == '1',
     )
 
-    if not update_payload["ok"]:
-        if update_payload["error"] == "未选择最终局赢家":
-            flash("未选择该轮最后一局的赢家", "danger")
-        else:
-            flash("请输入合法的得分范围(2~32)", "danger")
+    if not result["ok"]:
+        flash(result["message"], "danger")
         return redirect(url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=modify_type))
 
-    # 写路径策略：
-    if is_writeback_enabled():
-        # 1) 开启写回队列：先入 Redis 队列，达到批量阈值/时间窗口后落库 MySQL
-        write_result = enqueue_score_update(
-            turn_num,
-            update_payload["small_scores"],
-            update_payload["big_scores"],
-        )
-        # 入队成功时视为“已接收请求”
-        if write_result.get("ok") and write_result.get("queued"):
-            write_result = {"ok": True, "queued": True}
-    else:
-        # 2) 未开启或 Redis 不可用：直接写 MySQL（兼容旧模式）
-        write_result = apply_score_update(
-            get_db_connection,
-            turn_num,
-            update_payload["small_scores"],
-            update_payload["big_scores"],
-        )
-
-    if not write_result.get("ok"):
-        flash(f"Failed to update score: {write_result.get('error', 'unknown error')}", "danger")
-        return redirect(url_for('input_scores', table_num=table_num, turn_num=turn_num, modify_type=modify_type))
-
-    # 对阵缓存与比分无关，这里不清空 fight_info 缓存
-    mark_snapshot_stale()
-    save_score_log(turn_num, table_num, team1_name, team1_members, team2_name, team2_members, score_x, score_y)
-
-    if write_result.get("queued"):
-        flash(f"Round {turn_num}, table {table_num} 得分进入更新队列", 'success')
-    else:
-        flash(f"Round {turn_num}, table {table_num} 得分已直接更新", 'success')
+    flash(result["message"], "success")
     if modify_type:
         return redirect(url_for('modify_select_table'))
     return redirect(url_for('select_table'))
 
 
 if __name__ == '__main__':
-    # 启动快照线程
-    ensure_snapshot_worker_started()
-    # 启动比分写回线程（仅在 SCORE_WRITEBACK_ENABLED=1 且 Redis 可用时生效）
-    ensure_writeback_worker_started(get_db_connection)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # 启动 Redis runtime 写回线程。
+    ensure_runtime_flush_worker_started(get_db_connection)
+    ensure_runtime_view_refresh_worker_started()
+    app.run(host=app_config.HOST, port=app_config.PORT, debug=app_config.DEBUG)

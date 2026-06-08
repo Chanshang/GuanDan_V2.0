@@ -1,22 +1,74 @@
+import time
+
 from flask import Blueprint, jsonify
 
 from api.dashboard_cache import (
-    get_turn,
     is_valid_turn,
-    build_time_message,
-    ensure_snapshot_worker_started,
-    ensure_dashboard_snapshot_fresh,
-    get_snapshot_copy,
-    slice_team_rankings_for_screen,
 )
+from services.redis_runtime import RedisRuntimeError, runtime_error_to_api_payload
+from services.runtime_store import build_time_message, get_current_turn, get_state
+from services.runtime_views import read_dashboard_view, rebuild_dashboard_view
 
 frontend_api_bp = Blueprint("frontend_api", __name__)
+
+
+def _empty_dashboard_snapshot(turn):
+    state = get_state()
+    return {
+        "TURN": turn,
+        "time_message": build_time_message(),
+        "timer_started_at": state.get("timer_started_at", ""),
+        "timer_total_seconds": state.get("timer_total_seconds", "3600"),
+        "server_time": time.time(),
+        "error": "invalid turn",
+        "matchesinfo": [],
+        "scoresinfo": [],
+        "sumteaminfo": {
+            "current_turn": [],
+            "total_until_turn": [],
+        },
+        "officescore": {
+            "current_turn": [],
+            "total_until_turn": [],
+        },
+    }
+
+
+def _dashboard_matches_missing_levels(snapshot):
+    matches = snapshot.get("matchesinfo", [])
+    return any(isinstance(row, (list, tuple)) and 0 < len(row) < 7 for row in matches)
+
+
+def get_runtime_dashboard_snapshot():
+    """读取 Redis 运行态大屏视图，并补齐进程内倒计时兼容文案。"""
+    turn = get_current_turn()
+    if not is_valid_turn(turn):
+        return _empty_dashboard_snapshot(turn)
+
+    state = get_state()
+    snapshot = dict(read_dashboard_view(turn) or {})
+    if not snapshot.get("TURN") or _dashboard_matches_missing_levels(snapshot):
+        snapshot = dict(rebuild_dashboard_view(int(turn)) or {})
+
+    snapshot["TURN"] = str(snapshot.get("TURN") or turn)
+    snapshot["time_message"] = build_time_message()
+    snapshot["timer_started_at"] = state.get("timer_started_at", "")
+    snapshot["timer_total_seconds"] = state.get("timer_total_seconds", "3600")
+    snapshot["server_time"] = time.time()
+    return snapshot
+
+
+def _runtime_error_response(exc):
+    return jsonify(runtime_error_to_api_payload(exc))
 
 
 @frontend_api_bp.route('/TURNsinfo', methods=['GET'])
 def turns_info():
     """返回当前轮次（前端状态栏展示用）。"""
-    return jsonify({"TURN": get_turn()})
+    try:
+        return jsonify({"TURN": get_current_turn()})
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)
 
 
 @frontend_api_bp.route('/timesinfo', methods=['GET'])
@@ -28,113 +80,53 @@ def times_info():
 @frontend_api_bp.route('/matchesinfo', methods=['GET'])
 def matches_info():
     """返回当前轮次对阵信息。"""
-
-    # 确保后台快照线程已启动，并且快照是新鲜的（过期则刷新）
-    ensure_snapshot_worker_started()
-    ensure_dashboard_snapshot_fresh()
-
-    turn = get_turn()
-    if not is_valid_turn(turn):
-        return jsonify({"error": "invalid turn"})
-
-    snapshot = get_snapshot_copy()
-    return jsonify({"matchesinfo": snapshot["matchesinfo"]})
+    try:
+        snapshot = get_runtime_dashboard_snapshot()
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)
+    return jsonify({"matchesinfo": snapshot.get("matchesinfo", [])})
 
 
 @frontend_api_bp.route('/scoresinfo', methods=['GET'])
 def scores_info():
     """返回当前轮次小分信息。"""
-    ensure_snapshot_worker_started()
-    ensure_dashboard_snapshot_fresh()
-
-    turn = get_turn()
-    if not is_valid_turn(turn):
-        return jsonify({"error": "invalid turn"})
-
-    snapshot = get_snapshot_copy()
-    return jsonify({"scoresinfo": snapshot["scoresinfo"]})
+    try:
+        snapshot = get_runtime_dashboard_snapshot()
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)
+    return jsonify({"scoresinfo": snapshot.get("scoresinfo", [])})
 
 
 @frontend_api_bp.route('/sumteaminfo', methods=['GET'])
 def sum_team_info():
     """返回队伍维度的当前轮积分与累计积分。"""
-    ensure_snapshot_worker_started()
-    ensure_dashboard_snapshot_fresh()
-
-    turn = get_turn()
-    if not is_valid_turn(turn):
-        return jsonify({"error": "invalid turn"})
-
-    snapshot = get_snapshot_copy()
-    # 维持原有大屏轮播分段逻辑
-    current_results, total_results = slice_team_rankings_for_screen(
-        snapshot["team_current_full"], snapshot["team_total_full"]
-    )
-    return jsonify({
-        "current_turn": current_results,
-        "total_until_turn": total_results,
-    })
+    try:
+        snapshot = get_runtime_dashboard_snapshot()
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)
+    return jsonify(snapshot.get("sumteaminfo", {
+        "current_turn": [],
+        "total_until_turn": [],
+    }))
 
 
 @frontend_api_bp.route('/officescore', methods=['GET'])
 def office_score():
     """返回办公室维度的当前轮积分与累计积分。"""
-    ensure_snapshot_worker_started()
-    ensure_dashboard_snapshot_fresh()
-
-    turn = get_turn()
-    if not is_valid_turn(turn):
-        return jsonify({"error": "invalid turn"})
-
-    snapshot = get_snapshot_copy()
-    return jsonify({
-        "current_turn": snapshot["office_current"],
-        "total_until_turn": snapshot["office_total"],
-    })
+    try:
+        snapshot = get_runtime_dashboard_snapshot()
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)
+    return jsonify(snapshot.get("officescore", {
+        "current_turn": [],
+        "total_until_turn": [],
+    }))
 
 
 @frontend_api_bp.route('/dashboard_snapshot', methods=['GET'])
 def dashboard_snapshot():
     """聚合快照接口：前端一次请求拿齐展示数据。"""
-    ensure_snapshot_worker_started()
-    ensure_dashboard_snapshot_fresh()
-
-    turn = get_turn()
-    if not is_valid_turn(turn):
-        # 轮次未设置时返回空结构，前端可无异常渲染
-        return jsonify({
-            "TURN": turn,
-            "time_message": build_time_message(),
-            "error": "invalid turn",
-            "matchesinfo": [],
-            "scoresinfo": [],
-            "sumteaminfo": {
-                "current_turn": [],
-                "total_until_turn": [],
-            },
-            "officescore": {
-                "current_turn": [],
-                "total_until_turn": [],
-            },
-        })
-
-    snapshot = get_snapshot_copy()
-    team_current, team_total = slice_team_rankings_for_screen(
-        snapshot["team_current_full"], snapshot["team_total_full"]
-    )
-    return jsonify({
-        "TURN": turn,
-        "time_message": build_time_message(),
-        "matchesinfo": snapshot["matchesinfo"],
-        "scoresinfo": snapshot["scoresinfo"],
-        "sumteaminfo": {
-            "current_turn": team_current,
-            "total_until_turn": team_total,
-        },
-        "officescore": {
-            "current_turn": snapshot["office_current"],
-            "total_until_turn": snapshot["office_total"],
-        },
-        "snapshot_updated_at": snapshot["updated_at"],
-    })
-
+    try:
+        return jsonify(get_runtime_dashboard_snapshot())
+    except RedisRuntimeError as exc:
+        return _runtime_error_response(exc)

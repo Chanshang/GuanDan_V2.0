@@ -1,7 +1,7 @@
 <template>
   <div class="loading-container">
     <div class="spinner"></div>
-    <h1 class="loading-title">数据加载中，请稍候…</h1>
+    <h1 class="loading-title">匹配数据加载中，请稍候…</h1>
   </div>
 </template>
 

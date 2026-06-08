@@ -26,13 +26,15 @@ const onTimerClick = () => {
 
 <style scoped>
 .timer {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  font-size: 48px;
+  justify-self: end;
+  max-width: 100%;
+  font-size: clamp(24px, 3vw, 48px);
+  line-height: 1.2;
   color: #fff;
   background-color: rgba(0, 0, 0, 0.5);
-  padding: 5px;
-  border-radius: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-align: right;
+  white-space: normal;
 }
 </style>
